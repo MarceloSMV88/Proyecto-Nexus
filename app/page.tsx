@@ -153,8 +153,7 @@ function Sidebar({ active, onChange, collapsed, onToggle, projects, mobileOpen, 
           </svg>
         </div>
         {!collapsed && <div className="flex-1 min-w-0"><div className="font-bold text-[15px]" style={{ fontFamily:'Sora', letterSpacing:'0.18em' }}>NEXUS</div><div className="text-[10px] mt-px" style={{ color:'var(--text-2)', letterSpacing:'0.16em', textTransform:'uppercase' }}>Control Presupuestario</div></div>}
-        {!collapsed && <button className="btn btn-ghost !h-7 !w-7 !p-0 ml-auto" onClick={onToggle}><I name="panel-left-close" size={14}/></button>}
-        {!collapsed && onMobileClose && <button className="btn btn-ghost !h-7 !w-7 !p-0" onClick={onMobileClose}><I name="x" size={14}/></button>}
+
       </div>
       {collapsed && <button className="btn btn-ghost mx-auto mt-3 !h-7 !w-7 !p-0" onClick={onToggle}><I name="panel-left-open" size={14}/></button>}
 
@@ -213,19 +212,24 @@ function Sidebar({ active, onChange, collapsed, onToggle, projects, mobileOpen, 
 }
 
 // ─── TOPBAR ──────────────────────────────────────────────────
-function TopBar({ title, subtitle, onMenuClick }: { title: string; subtitle?: string; onMenuClick: () => void }) {
+function TopBar({ title, subtitle, onMenuClick, searchText, onSearchChange, onBellClick, hasNotifications }: { title: string; subtitle?: string; onMenuClick: () => void; searchText: string; onSearchChange: (val: string) => void; onBellClick: () => void; hasNotifications: boolean }) {
   return (
     <header className="hairline-b flex items-center gap-4 px-4 md:px-8" style={{ height:72 }}>
-      <button className="btn btn-ghost !w-9 !p-0 md:hidden" onClick={onMenuClick}><I name="menu" size={18}/></button>
+
       <div className="flex-1 min-w-0">
         <h1 className="font-bold text-[18px] md:text-[22px] truncate" style={{ fontFamily:'Sora', letterSpacing:'-0.02em' }}>{title}</h1>
         {subtitle && <div className="hidden md:block text-[12px]" style={{ color:'var(--text-2)' }}>{subtitle}</div>}
       </div>
       <div className="hidden md:flex items-center gap-2 px-3 hairline rounded-lg" style={{ height:36, width:320, background:'rgba(255,255,255,0.025)' }}>
         <I name="search" size={14} color="var(--text-2)"/>
-        <input className="bg-transparent outline-none text-[13px] flex-1" style={{ color:'var(--text-0)' }} placeholder="Buscar..."/>
+        <input className="bg-transparent outline-none text-[13px] flex-1" style={{ color:'var(--text-0)' }} placeholder="Buscar..." value={searchText} onChange={e => onSearchChange(e.target.value)}/>
       </div>
-      <button className="btn btn-ghost !w-9 !p-0"><I name="bell" size={16}/></button>
+      <button className="btn btn-ghost !w-9 !p-0 relative" onClick={onBellClick}>
+        <I name="bell" size={16}/>
+        {hasNotifications && (
+          <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#FF4D6D] animate-pulse" />
+        )}
+      </button>
     </header>
   );
 }
@@ -547,10 +551,74 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
   );
 }
 
+// ─── PROJECT ACTION DROPDOWN ─────────────────────────────────
+function ProjectActionDropdown({ project, onClose, onOpenDetail, onRefresh }: { project: any; onClose: () => void; onOpenDetail: () => void; onRefresh: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [onClose]);
+
+  async function updateStatus(newStatus: string) {
+    setLoading(true);
+    const { error } = await supabase.from('proyectos').update({ status: newStatus }).eq('id', project.id);
+    setLoading(false);
+    if (!error) {
+      onRefresh();
+      onClose();
+    } else {
+      alert('Error: ' + error.message);
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`¿Eliminar proyecto "${project.name}" y toda su información vinculada?`)) return;
+    setLoading(true);
+    const { error } = await supabase.from('proyectos').delete().eq('id', project.id);
+    setLoading(false);
+    if (!error) {
+      onRefresh();
+      onClose();
+    } else {
+      alert('Error: ' + error.message);
+    }
+  }
+
+  return (
+    <div ref={ref} className="absolute right-2 top-10 z-30 rounded-xl p-1.5 shadow-2xl flex flex-col min-w-[150px] border border-white/10" style={{ background: '#0F0F18', backdropFilter: 'blur(16px)' }} onClick={e => e.stopPropagation()}>
+      <button className="flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] rounded-lg text-left hover:bg-white/5 transition-all text-white w-full" onClick={onOpenDetail}>
+        <I name="eye" size={13} color="var(--text-2)" />Ver detalles
+      </button>
+      
+      <div className="hairline-t my-1" />
+      
+      <div className="px-2.5 py-1 text-[9px] eyebrow">Cambiar estado</div>
+      {['Planificado', 'En curso', 'En revisión', 'Completado'].map(st => (
+        <button key={st} disabled={loading} className={`flex items-center gap-2 px-2.5 py-1.5 text-[11px] rounded-lg text-left hover:bg-white/5 transition-all w-full ${project.status === st ? 'text-[#00D68F]' : 'text-gray-400'}`} onClick={() => updateStatus(st)}>
+          <span className={`w-1.5 h-1.5 rounded-full ${project.status === st ? 'bg-[#00D68F]' : 'bg-gray-600'}`} />
+          {st}
+        </button>
+      ))}
+
+      <div className="hairline-t my-1" />
+
+      <button disabled={loading} className="flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] rounded-lg text-left hover:bg-red-500/10 text-red-400 hover:text-red-300 transition-all w-full" onClick={handleDelete}>
+        <I name="trash-2" size={13} color="currentColor" />Eliminar
+      </button>
+    </div>
+  );
+}
+
 // ─── PROJECTS VIEW ───────────────────────────────────────────
 function ProjectsView({ projects, onOpenProject, onRefresh }: { projects: any[]; onOpenProject: (id:string)=>void; onRefresh: ()=>void }) {
   const [view, setView] = useState<'list'|'kanban'>('list');
   const [newOpen, setNewOpen] = useState(false);
+  const [menuProjectId, setMenuProjectId] = useState<string | null>(null);
 
   return (
     <div className="p-4 md:p-8 space-y-6">
@@ -584,7 +652,12 @@ function ProjectsView({ projects, onOpenProject, onRefresh }: { projects: any[];
                       <td className="font-mono" style={{ color:p.health==='danger'?'#FFB0BF':'var(--text-0)' }}>{fmtShort(p.executed||0)}</td>
                       <td><div className="flex items-center gap-2"><div className="flex-1"><ProgressBar value={p.progress||0} tone={p.health==='danger'?'danger':'ok'}/></div><span className="font-mono text-[11px] w-8 text-right">{p.progress||0}%</span></div></td>
                       <td><StatusPill status={p.status||'En curso'}/></td>
-                      <td><button className="btn btn-ghost !w-8 !p-0" onClick={e=>e.stopPropagation()}><I name="more-horizontal" size={14}/></button></td>
+                      <td className="relative overflow-visible">
+                        <button className="btn btn-ghost !w-8 !p-0" onClick={(e)=>{ e.stopPropagation(); setMenuProjectId(menuProjectId === p.id ? null : p.id); }}><I name="more-horizontal" size={14}/></button>
+                        {menuProjectId === p.id && (
+                          <ProjectActionDropdown project={p} onClose={()=>setMenuProjectId(null)} onOpenDetail={()=>{ onOpenProject(p.id); setMenuProjectId(null); }} onRefresh={onRefresh}/>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -1382,7 +1455,7 @@ function ComparativoPanel({ open, onClose, quotes, onAdjudicar }: { open:boolean
 }
 
 // ─── QUOTES VIEW ─────────────────────────────────────────────
-function QuotesView({ projects }: { projects: any[] }) {
+function QuotesView({ projects, searchText = '' }: { projects: any[]; searchText?: string }) {
   const [quotes, setQuotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -1418,7 +1491,12 @@ function QuotesView({ projects }: { projects: any[] }) {
   }
 
   const visibleQuotes = filterProjectId ? quotes.filter(q => q.project_id === filterProjectId) : quotes;
-  const selectedQuotes = visibleQuotes.filter(q=>selected.includes(q.id));
+  const filteredQuotes = visibleQuotes.filter(q => 
+    q.supplier?.toLowerCase().includes(searchText.toLowerCase()) ||
+    q.ref?.toLowerCase().includes(searchText.toLowerCase()) ||
+    (q.notes && q.notes.toLowerCase().includes(searchText.toLowerCase()))
+  );
+  const selectedQuotes = filteredQuotes.filter(q=>selected.includes(q.id));
   const getProject = (pid:string) => projects.find(p=>p.id===pid);
 
   return (
@@ -1454,7 +1532,7 @@ function QuotesView({ projects }: { projects: any[] }) {
                 <th style={{width:100}}>Vence</th><th style={{width:120}}>Estado</th><th style={{width:108}}/>
               </tr></thead>
               <tbody>
-                {visibleQuotes.map(q=>{
+                {filteredQuotes.map(q=>{
                   const proj = getProject(q.project_id);
                   const isSel = selected.includes(q.id);
                   return (
@@ -1482,7 +1560,7 @@ function QuotesView({ projects }: { projects: any[] }) {
                 })}
               </tbody>
             </table>
-            {visibleQuotes.length===0 && (
+            {filteredQuotes.length===0 && (
               <div className="p-12 text-center" style={{ color:'var(--text-2)' }}>
                 <I name="file-text" size={32} className="mx-auto mb-3 opacity-40"/>
                 <p className="mb-4">{filterProjectId ? 'No hay cotizaciones para este proyecto.' : 'No hay cotizaciones aún.'}</p>
@@ -1561,7 +1639,7 @@ function InsumoFormPanel({ open, onClose, projects, defaultProjectId, insumo }: 
 }
 
 // ─── INPUTS VIEW ─────────────────────────────────────────────
-function InputsView({ projects }: { projects: any[] }) {
+function InputsView({ projects, searchText = '' }: { projects: any[]; searchText?: string }) {
   const [insumos, setInsumos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
@@ -1583,6 +1661,12 @@ function InputsView({ projects }: { projects: any[] }) {
   }
 
   const visibleInsumos = filterProjectId ? insumos.filter(i => i.project_id === filterProjectId) : insumos;
+  const filteredInsumos = visibleInsumos.filter(i => 
+    i.name.toLowerCase().includes(searchText.toLowerCase()) ||
+    i.category.toLowerCase().includes(searchText.toLowerCase()) ||
+    (i.supplier && i.supplier.toLowerCase().includes(searchText.toLowerCase())) ||
+    (i.note && i.note.toLowerCase().includes(searchText.toLowerCase()))
+  );
   const getProject = (pid:string) => projects.find(p=>p.id===pid);
 
   return (
@@ -1606,7 +1690,7 @@ function InputsView({ projects }: { projects: any[] }) {
             <table className="tbl">
               <thead><tr><th>Insumo</th><th style={{width:120}}>Categoría</th><th style={{width:80}}>Cant.</th><th style={{width:100}}>Unidad</th><th style={{width:140}}>P. unitario</th><th>Proyecto</th><th style={{width:80}}/></tr></thead>
               <tbody>
-                {visibleInsumos.map(i => {
+                {filteredInsumos.map(i => {
                   const catMeta = CAT_META[i.category] || CAT_META['Otro'];
                   const proj = getProject(i.project_id);
                   return (
@@ -1628,7 +1712,7 @@ function InputsView({ projects }: { projects: any[] }) {
                 })}
               </tbody>
             </table>
-            {visibleInsumos.length===0 && (
+            {filteredInsumos.length===0 && (
               <div className="p-12 text-center" style={{ color:'var(--text-2)' }}>
                 <I name="package" size={32} className="mx-auto mb-3 opacity-40"/>
                 <p className="mb-4">{filterProjectId ? 'No hay insumos para este proyecto.' : 'No hay insumos registrados.'}</p>
@@ -1880,13 +1964,56 @@ function toggleTheme() {
   );
 }
 
+// ─── NOTIFICATIONS PANEL ─────────────────────────────────────
+function NotificationsPanel({ open, onClose, alerts, onNavigate }: { open: boolean; onClose: () => void; alerts: any[]; onNavigate: (id: string) => void }) {
+  return (
+    <SlideOver open={open} onClose={onClose} title="Alertas de Control" subtitle={`${alerts.length} eventos pendientes`}>
+      <div className="space-y-4">
+        {alerts.length === 0 ? (
+          <div className="text-center py-12 text-[13px]" style={{ color: 'var(--text-2)' }}>
+            <I name="check-circle" size={32} className="mx-auto mb-3 opacity-80" style={{ color: '#00D68F' }} />
+            <p className="font-semibold" style={{ fontFamily: 'Sora', color: 'var(--text-0)' }}>¡Todo en orden!</p>
+            <p className="text-[11.5px] opacity-75 mt-1">No hay presupuestos sobregirados, hitos atrasados ni cotizaciones vencidas.</p>
+          </div>
+        ) : (
+          alerts.map(alert => {
+            const colors = alert.severity === 'red' 
+              ? { bg: 'rgba(255, 77, 109, 0.08)', border: 'rgba(255, 77, 109, 0.25)', text: '#FF4D6D' }
+              : { bg: 'rgba(245, 166, 35, 0.08)', border: 'rgba(245, 166, 35, 0.25)', text: '#F5A623' };
+            return (
+              <div key={alert.id} className="p-4 rounded-xl flex gap-3 transition-all hover:bg-white/5" style={{ background: colors.bg, border: `1px solid ${colors.border}` }}>
+                <span className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.03)', color: colors.text }}>
+                  <I name={alert.icon} size={15} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-[13.5px]" style={{ color: 'var(--text-1)', fontFamily: 'Sora' }}>{alert.title}</div>
+                  <p className="text-[12px] mt-1" style={{ color: 'var(--text-2)', lineHeight: 1.4 }}>{alert.detail}</p>
+                  <div className="mt-3 flex gap-2">
+                    <button className="btn btn-ghost !h-7 !px-2.5 !text-[11px] flex items-center gap-1" onClick={() => { onNavigate(alert.view ? alert.view : `project:${alert.projectId}`); onClose(); }}>
+                      <I name="eye" size={11} />Ver detalles
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </SlideOver>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────
 export default function App() {
   const [projects, setProjects] = useState<any[]>([]);
+  const [quotes, setQuotes] = useState<any[]>([]);
+  const [hitos, setHitos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [route, setRoute] = useState<{ view:string; projectId?:string }>({ view:'dashboard' });
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   async function fetchProjects() {
     const { data, error } = await supabase.from('proyectos').select('*').order('created_at');
@@ -1894,7 +2021,111 @@ export default function App() {
     setLoading(false);
   }
 
-  useEffect(() => { fetchProjects(); }, []);
+  async function fetchNotificationData() {
+    const { data: qData } = await supabase.from('cotizaciones').select('*');
+    if (qData) setQuotes(qData);
+    const { data: hData } = await supabase.from('hitos').select('*');
+    if (hData) setHitos(hData);
+  }
+
+  const alerts = useMemo(() => {
+    const list: any[] = [];
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    // 1. Proyectos con presupuesto excedido
+    projects.forEach(p => {
+      if ((p.executed || 0) > (p.budget || 0) && (p.budget || 0) > 0) {
+        list.push({
+          id: `p-budget-${p.id}`,
+          type: 'budget',
+          title: `Presupuesto Excedido: ${p.name}`,
+          detail: `Se ha ejecutado ${fmtCLP(p.executed)} de un presupuesto de ${fmtCLP(p.budget)}.`,
+          severity: 'red',
+          icon: 'wallet',
+          projectId: p.id,
+        });
+      } else if ((p.executed || 0) >= (p.budget || 0) * 0.85 && (p.budget || 0) > 0) {
+        list.push({
+          id: `p-warn-${p.id}`,
+          type: 'budget-warn',
+          title: `Presupuesto Cercano al Límite: ${p.name}`,
+          detail: `Se ha ejecutado el ${((p.executed/p.budget)*100).toFixed(0)}% del presupuesto total.`,
+          severity: 'amber',
+          icon: 'wallet',
+          projectId: p.id,
+        });
+      }
+    });
+
+    // 2. Cotizaciones vigentes vencidas
+    quotes.forEach(q => {
+      if (q.status === 'Vigente' && q.expires) {
+        const expDate = new Date(q.expires);
+        expDate.setHours(0,0,0,0);
+        if (expDate < today) {
+          const projName = projects.find(p=>p.id===q.project_id)?.name || 'Proyecto';
+          list.push({
+            id: `q-exp-${q.id}`,
+            type: 'quote',
+            title: `Cotización Vencida: ${q.ref || q.id}`,
+            detail: `Proveedor: ${q.supplier}. Venció el ${fmtDateShort(q.expires)} para el proyecto ${projName}.`,
+            severity: 'red',
+            icon: 'file-text',
+            projectId: q.project_id,
+            view: 'quotes',
+          });
+        } else {
+          // cotizaciones que vencen en los próximos 3 días
+          const diffTime = expDate.getTime() - today.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          if (diffDays >= 0 && diffDays <= 3) {
+            list.push({
+              id: `q-near-${q.id}`,
+              type: 'quote-warn',
+              title: `Cotización por Vencer: ${q.ref || q.id}`,
+              detail: `Proveedor: ${q.supplier}. Vence en ${diffDays} día${diffDays!==1?'s':''} (${fmtDateShort(q.expires)}).`,
+              severity: 'amber',
+              icon: 'file-text',
+              projectId: q.project_id,
+              view: 'quotes',
+            });
+          }
+        }
+      }
+    });
+
+    // 3. Hitos atrasados
+    hitos.forEach(h => {
+      if (h.status !== 'Completado' && h.date) {
+        const hDate = new Date(h.date);
+        hDate.setHours(0,0,0,0);
+        if (hDate < today) {
+          const projName = projects.find(p=>p.id===h.project_id)?.name || 'Proyecto';
+          list.push({
+            id: `h-late-${h.id}`,
+            type: 'hito',
+            title: `Hito Atrasado: ${h.label}`,
+            detail: `Venció el ${fmtDateShort(h.date)} en ${projName}. Estado: ${h.status || 'Pendiente'}.`,
+            severity: 'red',
+            icon: 'calendar',
+            projectId: h.project_id,
+          });
+        }
+      }
+    });
+
+    return list;
+  }, [projects, quotes, hitos]);
+
+  async function loadData() {
+    await Promise.all([
+      fetchProjects(),
+      fetchNotificationData()
+    ]);
+  }
+
+  useEffect(() => { loadData(); }, []);
 
   useEffect(() => {
     if ((window as any).__lucideLoaded) return;
@@ -1906,12 +2137,22 @@ export default function App() {
   }, []);
 
   function onNavigate(id: string) {
+    setSearchText('');
     if (id.startsWith('project:')) setRoute({ view:'project_detail', projectId:id.split(':')[1] });
     else setRoute({ view:id });
   }
 
   const activeNav = route.view === 'project_detail' ? 'projects' : route.view;
   const currentProject = route.projectId ? projects.find(p=>p.id===route.projectId) : null;
+
+  const filteredProjects = useMemo(() => {
+    if (!searchText) return projects;
+    const q = searchText.toLowerCase();
+    return projects.filter(p => 
+      p.name.toLowerCase().includes(q) || 
+      p.code.toLowerCase().includes(q)
+    );
+  }, [projects, searchText]);
 
   const titles: Record<string,string> = { dashboard:'Dashboard', projects:'Proyectos', quotes:'Cotizaciones', inputs:'Insumos', returns:'Retornos', settings:'Configuración', project_detail: currentProject?.name||'Detalle' };
   const subtitles: Record<string,string> = { dashboard:`${projects.length} proyectos activos`, projects:'Administra todas tus iniciativas', quotes:'Gestiona cotizaciones de proveedores', inputs:'Catálogo de materiales y servicios', returns:'Mide el retorno de tus proyectos', settings:'Ajustes y preferencias' };
@@ -1930,19 +2171,21 @@ export default function App() {
       <Sidebar active={activeNav} onChange={onNavigate} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} projects={projects} mobileOpen={mobileOpen} onMobileClose={()=>setMobileOpen(false)}/>
 
       <main className="flex-1 flex flex-col relative" style={{ minWidth:0 }}>
-        <TopBar title={titles[route.view]||''} subtitle={subtitles[route.view]} onMenuClick={()=>setMobileOpen(true)}/>
+        <TopBar title={titles[route.view]||''} subtitle={subtitles[route.view]} onMenuClick={()=>setMobileOpen(true)} searchText={searchText} onSearchChange={setSearchText} onBellClick={()=>setNotificationsOpen(true)} hasNotifications={alerts.length > 0}/>
         <div className="flex-1 overflow-y-auto relative">
           <div className="fade-in">
-            {route.view==='dashboard' && <Dashboard projects={projects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})}/>}
-            {route.view==='projects' && <ProjectsView projects={projects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})} onRefresh={fetchProjects}/>}
-            {route.view==='project_detail' && currentProject && <ProjectDetail project={currentProject} onBack={()=>setRoute({view:'projects'})} onRefresh={fetchProjects}/>}
-            {route.view==='quotes' && <QuotesView projects={projects}/>}
-            {route.view==='inputs' && <InputsView projects={projects}/>}
+            {route.view==='dashboard' && <Dashboard projects={filteredProjects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})}/>}
+            {route.view==='projects' && <ProjectsView projects={filteredProjects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})} onRefresh={loadData}/>}
+            {route.view==='project_detail' && currentProject && <ProjectDetail project={currentProject} onBack={()=>setRoute({view:'projects'})} onRefresh={loadData}/>}
+            {route.view==='quotes' && <QuotesView projects={projects} searchText={searchText}/>}
+            {route.view==='inputs' && <InputsView projects={projects} searchText={searchText}/>}
             {route.view==='returns' && <ReturnsView projects={projects}/>}
             {route.view==='settings' && <SettingsView/>}
           </div>
         </div>
       </main>
+
+      <NotificationsPanel open={notificationsOpen} onClose={()=>setNotificationsOpen(false)} alerts={alerts} onNavigate={onNavigate}/>
     </div>
   );
 }
