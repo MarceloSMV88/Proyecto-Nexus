@@ -531,9 +531,34 @@ function TabPresupuesto({ project, onRefresh }: { project:any; onRefresh:()=>voi
 const QUOTE_STATUS_CLS: Record<string,string> = { 'Vigente':'pill-blue','Vencida':'pill-red','Adjudicada':'pill-jade','Rechazada':'','Pendiente':'' };
 
 function TabCotizaciones({ quotes, project, onRefresh }: { quotes:any[]; project:any; onRefresh:()=>void }) {
-  const [newOpen, setNewOpen] = useState(false);
-  const total      = quotes.reduce((a,q)=>a+(q.total||q.amount||0),0);
-  const adjudicado = quotes.filter(q=>q.status==='Adjudicada').reduce((a,q)=>a+(q.total||q.amount||0),0);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editQuote, setEditQuote] = useState<any>(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [comparativoOpen, setComparativoOpen] = useState(false);
+
+  const total      = quotes.reduce((a,q)=>a+(q.total||0),0);
+  const adjudicado = quotes.filter(q=>q.status==='Adjudicada').reduce((a,q)=>a+(q.total||0),0);
+
+  function toggleSel(id:string) { setSelected(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]); }
+
+  async function handleAdjudicar(q:any) {
+    const hasItems = Array.isArray(q.items)&&q.items.filter((i:any)=>i.name).length>0;
+    if (!confirm(`¿Adjudicar ${q.ref||q.id} de ${q.supplier}?${hasItems?' Los ítems se guardarán como insumos.':''}`)) return;
+    const { error } = await adjudicarCotizacion(q);
+    if (error) { alert('Error: '+error.message); return; }
+    onRefresh();
+  }
+
+  async function handleDelete(q:any) {
+    if (!confirm(`¿Eliminar la cotización ${q.ref||q.id}?`)) return;
+    const { error } = await supabase.from('cotizaciones').delete().eq('id',q.id);
+    if (error) { alert('Error: '+error.message); return; }
+    onRefresh();
+  }
+
+  const selectedQuotes = quotes.filter(q=>selected.includes(q.id));
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -541,35 +566,67 @@ function TabCotizaciones({ quotes, project, onRefresh }: { quotes:any[]; project
           <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">Total cotizado</div><div className="font-mono font-semibold text-[18px] mt-1">{fmtCLP(total)}</div></Card>
           <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">Adjudicado</div><div className="font-mono font-semibold text-[18px] mt-1" style={{ color:'#6FFFCB' }}>{fmtCLP(adjudicado)}</div></Card>
         </div>
-        <button className="btn btn-primary" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nueva cotización</button>
+        <div className="flex gap-2">
+          <button className={`btn${compareMode?' btn-primary':''}`} onClick={()=>{setCompareMode(!compareMode);setSelected([]);}}><I name="columns-3" size={13}/><span className="hidden md:inline">{compareMode?'Cancelar':'Comparar'}</span></button>
+          <button className="btn btn-primary" onClick={()=>{setEditQuote(null);setFormOpen(true);}}><I name="plus" size={14}/><span className="hidden md:inline">Nueva</span></button>
+        </div>
       </div>
+
+      {compareMode && selected.length>=2 && (
+        <div className="flex items-center justify-between p-3 rounded-xl" style={{ background:'rgba(0,214,143,0.08)', border:'1px solid rgba(0,214,143,0.25)' }}>
+          <span className="text-[13px]" style={{ color:'var(--jade)' }}>{selected.length} seleccionadas</span>
+          <button className="btn btn-primary !h-8" onClick={()=>setComparativoOpen(true)}><I name="bar-chart-2" size={13}/>Ver comparativo</button>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <Card className="overflow-hidden" style={{ minWidth:500 }}>
           <table className="tbl">
-            <thead><tr><th>Referencia</th><th>Proveedor</th><th>Monto</th><th style={{width:100}}>Vence</th><th style={{width:120}}>Estado</th><th style={{width:40}}></th></tr></thead>
+            <thead><tr>
+              {compareMode && <th style={{width:40}}/>}
+              <th>Referencia</th><th>Proveedor</th><th>Monto</th>
+              <th style={{width:100}}>Vence</th><th style={{width:120}}>Estado</th><th style={{width:108}}/>
+            </tr></thead>
             <tbody>
-              {quotes.map(q=>(
-                <tr key={q.id}>
-                  <td><div className="font-mono text-[12.5px]">{q.ref||q.id}</div>{q.notes&&<div className="text-[10px]" style={{color:'var(--text-3)'}}>{q.notes}</div>}</td>
-                  <td className="font-medium">{q.supplier||q.vendor||'—'}</td>
-                  <td className="font-mono">{fmtCLP(q.total||q.amount||0)}</td>
-                  <td className="font-mono text-[12px]" style={{color:'var(--text-1)'}}>{fmtDateShort(q.expires||q.date)}</td>
-                  <td><span className={'pill '+(QUOTE_STATUS_CLS[q.status]||'')}>{q.status||'Pendiente'}</span></td>
-                  <td><button className="btn btn-ghost !w-8 !p-0"><I name="more-horizontal" size={14}/></button></td>
-                </tr>
-              ))}
+              {quotes.map(q=>{
+                const isSel = selected.includes(q.id);
+                return (
+                  <tr key={q.id} style={{ background:isSel?'rgba(0,214,143,0.04)':undefined }}>
+                    {compareMode && <td onClick={()=>toggleSel(q.id)} style={{ cursor:'pointer' }}>
+                      <div className="w-4 h-4 rounded flex items-center justify-center" style={{ border:`1.5px solid ${isSel?'var(--jade)':'var(--line-strong)'}`, background:isSel?'rgba(0,214,143,0.15)':'transparent' }}>
+                        {isSel && <I name="check" size={10} color="var(--jade)"/>}
+                      </div>
+                    </td>}
+                    <td><div className="font-mono text-[12.5px]">{q.ref||q.id}</div>{q.notes&&<div className="text-[10px]" style={{color:'var(--text-3)'}}>{q.notes}</div>}</td>
+                    <td className="font-medium">{q.supplier||'—'}</td>
+                    <td className="font-mono">{fmtCLP(q.total||0)}</td>
+                    <td className="font-mono text-[12px]" style={{color:'var(--text-1)'}}>{fmtDateShort(q.expires)}</td>
+                    <td><span className={'pill '+(QUOTE_STATUS_CLS[q.status]||'')}>{q.status||'Pendiente'}</span></td>
+                    <td>
+                      <div className="flex items-center gap-1">
+                        <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Editar" onClick={()=>{setEditQuote(q);setFormOpen(true);}}><I name="pencil" size={13}/></button>
+                        {q.status!=='Adjudicada' && <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Adjudicar" onClick={()=>handleAdjudicar(q)}><I name="award" size={13} color="#F5A623"/></button>}
+                        <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Eliminar" onClick={()=>handleDelete(q)}><I name="trash-2" size={13} color="#FF4D6D"/></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {quotes.length===0 && (
             <div className="p-12 text-center" style={{color:'var(--text-2)'}}>
               <I name="file-text" size={32} className="mx-auto mb-3 opacity-40"/>
               <p className="mb-4">Sin cotizaciones para este proyecto.</p>
-              <button className="btn btn-primary mx-auto" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nueva cotización</button>
+              <button className="btn btn-primary mx-auto" onClick={()=>{setEditQuote(null);setFormOpen(true);}}><I name="plus" size={14}/>Nueva cotización</button>
             </div>
           )}
         </Card>
       </div>
-      <NewQuotePanel open={newOpen} onClose={()=>{setNewOpen(false);onRefresh();}} projects={[project]} defaultProjectId={project.id}/>
+
+      <QuoteFormPanel open={formOpen} onClose={()=>{setFormOpen(false);onRefresh();}} projects={[project]} defaultProjectId={project.id} quote={editQuote||undefined}/>
+      <ComparativoPanel open={comparativoOpen} onClose={()=>setComparativoOpen(false)} quotes={selectedQuotes}
+        onAdjudicar={async(q)=>{ await handleAdjudicar(q); setComparativoOpen(false); setSelected(p=>p.filter(x=>x!==q.id)); }}/>
     </div>
   );
 }
@@ -870,50 +927,284 @@ function ProjectDetail({ project, onBack, onRefresh }: { project:any; onBack:()=
   );
 }
 
+// ─── QUOTE HELPERS ───────────────────────────────────────────
+async function adjudicarCotizacion(quote: any) {
+  const { error: e1 } = await supabase.from('cotizaciones').update({ status:'Adjudicada' }).eq('id', quote.id);
+  if (e1) return { error: e1 };
+  const items: any[] = Array.isArray(quote.items) ? quote.items.filter((i:any)=>i.name) : [];
+  if (items.length > 0) {
+    const rows = items.map((item:any, idx:number) => ({
+      id: 'i'+Date.now()+idx,
+      name: item.name,
+      category: 'Material',
+      unit: item.unit||'',
+      unit_price: Number(item.unit_price)||0,
+      quantity: Number(item.qty)||1,
+      project_id: quote.project_id||null,
+      supplier: quote.supplier||'',
+      note: `Cotización ${quote.ref||quote.id}`,
+    }));
+    const { error: e2 } = await supabase.from('insumos').insert(rows);
+    if (e2) return { error: e2 };
+  }
+  return { error: null };
+}
+
+// ─── QUOTE FORM PANEL ────────────────────────────────────────
+type QItem = { name:string; qty:number; unit:string; unit_price:number };
+
+function QuoteFormPanel({ open, onClose, projects, defaultProjectId, quote }: {
+  open:boolean; onClose:()=>void; projects:any[]; defaultProjectId?:string; quote?:any;
+}) {
+  const isEdit = !!quote;
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ ref:'', supplier:'', project_id:defaultProjectId||'', status:'Vigente', notes:'', expires:'', manualTotal:'' });
+  const [items, setItems] = useState<QItem[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (quote) {
+      setForm({ ref:quote.ref||'', supplier:quote.supplier||'', project_id:quote.project_id||'', status:quote.status||'Vigente', notes:quote.notes||'', expires:quote.expires||'', manualTotal:String(quote.total||'') });
+      setItems(Array.isArray(quote.items)&&quote.items.length>0 ? quote.items.map((i:any)=>({ name:i.name||'', qty:Number(i.qty)||1, unit:i.unit||'', unit_price:Number(i.unit_price)||0 })) : []);
+    } else {
+      setForm({ ref:'', supplier:'', project_id:defaultProjectId||'', status:'Vigente', notes:'', expires:'', manualTotal:'' });
+      setItems([]);
+    }
+  }, [open, quote?.id, defaultProjectId]);
+
+  const itemsTotal = items.reduce((a,i)=>a+(i.qty*i.unit_price),0);
+  const total = items.length>0 ? itemsTotal : Number(form.manualTotal)||0;
+
+  function addItem() { setItems(p=>[...p,{ name:'', qty:1, unit:'', unit_price:0 }]); }
+  function removeItem(idx:number) { setItems(p=>p.filter((_,i)=>i!==idx)); }
+  function updItem(idx:number, field:keyof QItem, val:string) {
+    setItems(p=>p.map((item,i)=>i===idx?{...item,[field]:field==='name'||field==='unit'?val:Number(val)||0}:item));
+  }
+
+  async function handleSave() {
+    if (!form.supplier.trim()) return;
+    setLoading(true);
+    const ref = form.ref||'COT-'+Date.now().toString().slice(-6);
+    const payload = { ref, supplier:form.supplier, project_id:form.project_id||null, total, status:form.status, notes:form.notes, expires:form.expires||null, currency:'CLP', items };
+    const { error } = isEdit
+      ? await supabase.from('cotizaciones').update(payload).eq('id', quote.id)
+      : await supabase.from('cotizaciones').insert([{ id:'q'+Date.now(), ...payload }]);
+    setLoading(false);
+    if (!error) onClose();
+    else alert('Error: '+error.message);
+  }
+
+  return (
+    <SlideOver open={open} onClose={onClose} width={640} subtitle={isEdit?'Editar':'Nueva cotización'} title={isEdit?(form.ref||'Editar cotización'):'Registrar cotización'}>
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="label">Referencia</label><input className="input" placeholder="COT-2026-XXXX (auto)" value={form.ref} onChange={e=>setForm({...form,ref:e.target.value})}/></div>
+          <div><label className="label">Fecha vencimiento</label><input className="input" type="date" value={form.expires} onChange={e=>setForm({...form,expires:e.target.value})}/></div>
+        </div>
+        <div><label className="label">Proveedor *</label><input className="input" placeholder="Nombre del proveedor" value={form.supplier} onChange={e=>setForm({...form,supplier:e.target.value})}/></div>
+        <div><label className="label">Proyecto</label>
+          <select className="select" value={form.project_id} onChange={e=>setForm({...form,project_id:e.target.value})}>
+            <option value="">Sin proyecto asignado</option>
+            {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        <div><label className="label">Estado</label>
+          <select className="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>
+            {['Vigente','Vencida','Adjudicada','Rechazada'].map(s=><option key={s}>{s}</option>)}
+          </select>
+        </div>
+
+        {/* Ítems */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="label !mb-0">Ítems de la cotización</label>
+            <button className="btn btn-ghost !h-7 text-[11px]" onClick={addItem}><I name="plus" size={12}/>Agregar ítem</button>
+          </div>
+          {items.length>0 ? (
+            <div className="rounded-xl overflow-hidden" style={{ border:'1px solid var(--line)' }}>
+              <div className="grid text-[10px] px-3 py-2 gap-2" style={{ gridTemplateColumns:'1fr 54px 62px 92px 86px 28px', color:'var(--text-3)', background:'rgba(255,255,255,0.02)' }}>
+                <span>Descripción</span><span>Cant.</span><span>Unidad</span><span>P. unitario</span><span className="text-right">Subtotal</span><span/>
+              </div>
+              {items.map((item,idx)=>(
+                <div key={idx} className="grid px-3 py-1.5 gap-2 hairline-t items-center" style={{ gridTemplateColumns:'1fr 54px 62px 92px 86px 28px' }}>
+                  <input className="input !h-7 !text-[12px]" placeholder="Descripción" value={item.name} onChange={e=>updItem(idx,'name',e.target.value)}/>
+                  <input className="input !h-7 !text-[12px]" type="number" min="0" value={item.qty||''} onChange={e=>updItem(idx,'qty',e.target.value)}/>
+                  <input className="input !h-7 !text-[12px]" placeholder="m²…" value={item.unit} onChange={e=>updItem(idx,'unit',e.target.value)}/>
+                  <input className="input !h-7 !text-[12px]" type="number" min="0" placeholder="0" value={item.unit_price||''} onChange={e=>updItem(idx,'unit_price',e.target.value)}/>
+                  <span className="font-mono text-[11px] text-right pr-1" style={{ color:'var(--text-1)' }}>{fmtCLP(item.qty*item.unit_price)}</span>
+                  <button className="btn btn-ghost !w-7 !h-7 !p-0" onClick={()=>removeItem(idx)}><I name="x" size={12} color="var(--text-3)"/></button>
+                </div>
+              ))}
+              <div className="flex justify-end items-center gap-2 px-3 py-2 hairline-t" style={{ background:'rgba(255,255,255,0.02)' }}>
+                <span className="text-[11px]" style={{ color:'var(--text-2)' }}>Total:</span>
+                <span className="font-mono font-semibold text-[14px]">{fmtCLP(itemsTotal)}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <button className="w-full py-3 rounded-xl text-[12px] transition-all" style={{ border:'1px dashed var(--line-strong)', color:'var(--text-3)' }} onClick={addItem}>+ Agregar ítems a esta cotización</button>
+              <div><label className="label">Monto total manual (CLP)</label><input className="input" type="number" placeholder="0" value={form.manualTotal} onChange={e=>setForm({...form,manualTotal:e.target.value})}/></div>
+            </div>
+          )}
+        </div>
+        <div><label className="label">Notas</label><textarea className="textarea" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Observaciones, condiciones..."/></div>
+      </div>
+      <div className="hairline-t mt-8 pt-5 flex items-center justify-between">
+        <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn btn-primary" onClick={handleSave} disabled={loading}><I name="check" size={14}/>{loading?'Guardando...':(isEdit?'Guardar cambios':'Crear cotización')}</button>
+      </div>
+    </SlideOver>
+  );
+}
+
+// ─── COMPARATIVO PANEL ────────────────────────────────────────
+function ComparativoPanel({ open, onClose, quotes, onAdjudicar }: { open:boolean; onClose:()=>void; quotes:any[]; onAdjudicar:(q:any)=>void }) {
+  if (!open || quotes.length<2) return null;
+  const COLORS = ['#00D68F','#4D9EFF','#F5A623','#A88CFF','#FF8FAD'];
+  return (
+    <div className="fixed inset-0 z-50 fade-in" style={{ background:'rgba(0,0,0,0.65)', backdropFilter:'blur(3px)' }} onClick={onClose}>
+      <div className="absolute inset-4 md:inset-8 rounded-2xl overflow-hidden flex flex-col" style={{ background:'linear-gradient(180deg,#0F0F18,#0A0A12)', border:'1px solid var(--line-strong)' }} onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 hairline-b flex-shrink-0">
+          <div><div className="eyebrow mb-1">Módulo cotizaciones</div><h2 className="font-bold text-[20px]" style={{ fontFamily:'Sora' }}>Comparativo · {quotes.length} cotizaciones</h2></div>
+          <button className="btn btn-ghost" onClick={onClose}><I name="x" size={16}/></button>
+        </div>
+        <div className="flex-1 overflow-auto p-5">
+          <div className="grid gap-4" style={{ gridTemplateColumns:`repeat(${quotes.length}, minmax(200px,1fr))` }}>
+            {quotes.map((q,i)=>{
+              const color = COLORS[i%COLORS.length];
+              const items: any[] = Array.isArray(q.items)?q.items.filter((x:any)=>x.name):[];
+              const isAdj = q.status==='Adjudicada';
+              return (
+                <div key={q.id} className="glass rounded-2xl p-4 flex flex-col gap-4" style={{ borderTop:`2px solid ${color}` }}>
+                  <div>
+                    <div className="font-mono text-[10px] mb-1" style={{ color:'var(--text-3)' }}>{q.ref||q.id}</div>
+                    <div className="font-bold text-[15px]" style={{ fontFamily:'Sora', color }}>{q.supplier||'—'}</div>
+                    <div className="font-mono font-semibold text-[24px] mt-2">{fmtCLP(q.total||0)}</div>
+                  </div>
+                  <div className="hairline-t pt-3 space-y-2 text-[12px]">
+                    <div className="flex justify-between"><span style={{ color:'var(--text-2)' }}>Vence</span><span className="font-mono">{fmtDateShort(q.expires)}</span></div>
+                    <div className="flex justify-between items-center"><span style={{ color:'var(--text-2)' }}>Estado</span><span className={'pill '+(QUOTE_STATUS_CLS[q.status]||'')}>{q.status||'—'}</span></div>
+                    <div className="flex justify-between"><span style={{ color:'var(--text-2)' }}>Ítems</span><span>{items.length}</span></div>
+                  </div>
+                  {items.length>0 && (
+                    <div className="hairline-t pt-3">
+                      <div className="eyebrow text-[10px] mb-2">Desglose</div>
+                      <div className="space-y-1.5">
+                        {items.map((item:any,idx:number)=>(
+                          <div key={idx} className="flex justify-between text-[12px]">
+                            <span className="truncate mr-2" style={{ color:'var(--text-1)' }}>{item.name}{item.qty>1?` ×${item.qty}`:''}</span>
+                            <span className="font-mono flex-shrink-0" style={{ color:'var(--text-2)' }}>{fmtCLP((item.unit_price||0)*(item.qty||1))}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-auto pt-3 hairline-t">
+                    <button className="btn w-full justify-center" disabled={isAdj}
+                      style={{ background:isAdj?'transparent':`${color}18`, border:`1px solid ${isAdj?'var(--line)':color}`, color:isAdj?'var(--text-3)':color }}
+                      onClick={()=>!isAdj&&onAdjudicar(q)}>
+                      <I name={isAdj?'check-circle':'award'} size={14}/>{isAdj?'Ya adjudicada':'Adjudicar esta'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── QUOTES VIEW ─────────────────────────────────────────────
 function QuotesView({ projects }: { projects: any[] }) {
   const [quotes, setQuotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newOpen, setNewOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editQuote, setEditQuote] = useState<any>(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [comparativoOpen, setComparativoOpen] = useState(false);
 
   async function fetchQuotes() {
     const { data } = await supabase.from('cotizaciones').select('*').order('created_at', { ascending: false });
     if (data) setQuotes(data);
     setLoading(false);
   }
-
   useEffect(() => { fetchQuotes(); }, []);
 
-  const getProject = (pid: string) => projects.find(p => p.id === pid);
+  function toggleSel(id:string) { setSelected(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]); }
 
-  const statusColor: Record<string, string> = { 'Vigente':'pill-blue', 'Vencida':'pill-red', 'Adjudicada':'pill-jade', 'Rechazada':'' };
+  async function handleAdjudicar(q:any) {
+    const hasItems = Array.isArray(q.items)&&q.items.filter((i:any)=>i.name).length>0;
+    if (!confirm(`¿Adjudicar ${q.ref||q.id} de ${q.supplier}?${hasItems?' Los ítems se guardarán como insumos.':''}`)) return;
+    const { error } = await adjudicarCotizacion(q);
+    if (error) { alert('Error: '+error.message); return; }
+    fetchQuotes();
+  }
+
+  async function handleDelete(q:any) {
+    if (!confirm(`¿Eliminar la cotización ${q.ref||q.id}?`)) return;
+    const { error } = await supabase.from('cotizaciones').delete().eq('id',q.id);
+    if (error) { alert('Error: '+error.message); return; }
+    fetchQuotes();
+  }
+
+  const selectedQuotes = quotes.filter(q=>selected.includes(q.id));
+  const getProject = (pid:string) => projects.find(p=>p.id===pid);
 
   return (
     <div className="p-4 md:p-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily:'Sora' }}>Cotizaciones</h2><p className="text-[12px] mt-0.5" style={{ color:'var(--text-2)' }}>Gestiona y compara cotizaciones de proveedores</p></div>
-        <button className="btn btn-primary" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nueva cotización</button>
+        <div className="flex items-center gap-2">
+          <button className={`btn${compareMode?' btn-primary':''}`} onClick={()=>{setCompareMode(!compareMode);setSelected([]);}}><I name="columns-3" size={14}/>{compareMode?'Cancelar':'Comparar'}</button>
+          <button className="btn btn-primary" onClick={()=>{setEditQuote(null);setFormOpen(true);}}><I name="plus" size={14}/>Nueva cotización</button>
+        </div>
       </div>
+
+      {compareMode && selected.length>=2 && (
+        <div className="flex items-center justify-between p-3 rounded-xl" style={{ background:'rgba(0,214,143,0.08)', border:'1px solid rgba(0,214,143,0.25)' }}>
+          <span className="text-[13px]" style={{ color:'var(--jade)' }}>{selected.length} cotizaciones seleccionadas</span>
+          <button className="btn btn-primary !h-8" onClick={()=>setComparativoOpen(true)}><I name="bar-chart-2" size={13}/>Ver comparativo</button>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center py-12" style={{ color:'var(--text-2)' }}>Cargando...</div>
       ) : (
         <div className="overflow-x-auto">
-          <Card className="overflow-hidden" style={{ minWidth:600 }}>
+          <Card className="overflow-hidden" style={{ minWidth:620 }}>
             <table className="tbl">
-              <thead><tr><th>Referencia</th><th>Proveedor</th><th>Proyecto</th><th>Monto</th><th style={{width:100}}>Vence</th><th style={{width:120}}>Estado</th><th style={{width:40}}></th></tr></thead>
+              <thead><tr>
+                {compareMode && <th style={{width:40}}/>}
+                <th>Referencia</th><th>Proveedor</th><th>Proyecto</th><th>Monto</th>
+                <th style={{width:100}}>Vence</th><th style={{width:120}}>Estado</th><th style={{width:108}}/>
+              </tr></thead>
               <tbody>
-                {quotes.map(q => {
+                {quotes.map(q=>{
                   const proj = getProject(q.project_id);
+                  const isSel = selected.includes(q.id);
                   return (
-                    <tr key={q.id}>
+                    <tr key={q.id} style={{ background:isSel?'rgba(0,214,143,0.04)':undefined }}>
+                      {compareMode && <td onClick={()=>toggleSel(q.id)} style={{ cursor:'pointer' }}>
+                        <div className="w-4 h-4 rounded flex items-center justify-center" style={{ border:`1.5px solid ${isSel?'var(--jade)':'var(--line-strong)'}`, background:isSel?'rgba(0,214,143,0.15)':'transparent' }}>
+                          {isSel && <I name="check" size={10} color="var(--jade)"/>}
+                        </div>
+                      </td>}
                       <td><div className="font-mono text-[12.5px]">{q.ref||q.id}</div><div className="text-[10px]" style={{ color:'var(--text-3)' }}>{q.notes||''}</div></td>
                       <td className="font-medium">{q.supplier||'—'}</td>
                       <td><span className="text-[12px]" style={{ color:'var(--text-1)' }}>{proj?.name||'—'}</span></td>
                       <td className="font-mono">{fmtCLP(q.total||0)}</td>
                       <td className="font-mono text-[12px]" style={{ color:'var(--text-1)' }}>{fmtDateShort(q.expires)}</td>
-                      <td><span className={'pill '+(statusColor[q.status]||'')}>{q.status||'Vigente'}</span></td>
-                      <td><button className="btn btn-ghost !w-8 !p-0"><I name="more-horizontal" size={14}/></button></td>
+                      <td><span className={'pill '+(QUOTE_STATUS_CLS[q.status]||'')}>{q.status||'Vigente'}</span></td>
+                      <td>
+                        <div className="flex items-center gap-1">
+                          <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Editar" onClick={()=>{setEditQuote(q);setFormOpen(true);}}><I name="pencil" size={13}/></button>
+                          {q.status!=='Adjudicada' && <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Adjudicar" onClick={()=>handleAdjudicar(q)}><I name="award" size={13} color="#F5A623"/></button>}
+                          <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Eliminar" onClick={()=>handleDelete(q)}><I name="trash-2" size={13} color="#FF4D6D"/></button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -923,54 +1214,17 @@ function QuotesView({ projects }: { projects: any[] }) {
               <div className="p-12 text-center" style={{ color:'var(--text-2)' }}>
                 <I name="file-text" size={32} className="mx-auto mb-3 opacity-40"/>
                 <p className="mb-4">No hay cotizaciones aún.</p>
-                <button className="btn btn-primary mx-auto" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nueva cotización</button>
+                <button className="btn btn-primary mx-auto" onClick={()=>{setEditQuote(null);setFormOpen(true);}}><I name="plus" size={14}/>Nueva cotización</button>
               </div>
             )}
           </Card>
         </div>
       )}
-      <NewQuotePanel open={newOpen} onClose={()=>{ setNewOpen(false); fetchQuotes(); }} projects={projects}/>
-    </div>
-  );
-}
 
-function NewQuotePanel({ open, onClose, projects, defaultProjectId }: { open:boolean; onClose:()=>void; projects:any[]; defaultProjectId?:string }) {
-  const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ ref:'', supplier:'', project_id: defaultProjectId||'', total:'', status:'Vigente', notes:'', expires:'' });
-  useEffect(() => { if (open) setForm(f=>({...f, project_id: defaultProjectId||''})); }, [open, defaultProjectId]);
-  async function handleCreate() {
-    if (!form.supplier.trim()) return;
-    setLoading(true);
-    const id = 'q'+Date.now();
-    const ref = form.ref || 'COT-'+Date.now().toString().slice(-6);
-    const { error } = await supabase.from('cotizaciones').insert([{ id, ref, supplier:form.supplier, project_id:form.project_id||null, total:Number(form.total)||0, status:form.status, notes:form.notes, expires:form.expires||null, currency:'CLP', items:[] }]);
-    setLoading(false);
-    if (!error) { setForm({ ref:'', supplier:'', project_id:'', total:'', status:'Vigente', notes:'', expires:'' }); onClose(); }
-    else alert('Error: '+error.message);
-  }
-  return (
-    <SlideOver open={open} onClose={onClose} subtitle="Nueva cotización" title="Registrar cotización">
-      <div className="space-y-5">
-        <div><label className="label">Referencia</label><input className="input" placeholder="COT-2026-XXXX (auto si vacío)" value={form.ref} onChange={e=>setForm({...form,ref:e.target.value})}/></div>
-        <div><label className="label">Proveedor *</label><input className="input" placeholder="Nombre del proveedor" value={form.supplier} onChange={e=>setForm({...form,supplier:e.target.value})}/></div>
-        <div><label className="label">Proyecto</label>
-          <select className="select" value={form.project_id} onChange={e=>setForm({...form,project_id:e.target.value})}>
-            <option value="">Sin proyecto asignado</option>
-            {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div><label className="label">Monto total (CLP)</label><input className="input" type="number" placeholder="0" value={form.total} onChange={e=>setForm({...form,total:e.target.value})}/></div>
-          <div><label className="label">Fecha vencimiento</label><input className="input" type="date" value={form.expires} onChange={e=>setForm({...form,expires:e.target.value})}/></div>
-        </div>
-        <div><label className="label">Estado</label><select className="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{['Vigente','Vencida','Adjudicada','Rechazada'].map(s=><option key={s}>{s}</option>)}</select></div>
-        <div><label className="label">Notas</label><textarea className="textarea" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})}/></div>
-      </div>
-      <div className="hairline-t mt-8 pt-5 flex items-center justify-between">
-        <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn btn-primary" onClick={handleCreate} disabled={loading}><I name="check" size={14}/>{loading?'Guardando...':'Guardar cotización'}</button>
-      </div>
-    </SlideOver>
+      <QuoteFormPanel open={formOpen} onClose={()=>{setFormOpen(false);fetchQuotes();}} projects={projects} quote={editQuote||undefined}/>
+      <ComparativoPanel open={comparativoOpen} onClose={()=>setComparativoOpen(false)} quotes={selectedQuotes}
+        onAdjudicar={async(q)=>{ await handleAdjudicar(q); setComparativoOpen(false); setSelected(p=>p.filter(x=>x!==q.id)); }}/>
+    </div>
   );
 }
 
