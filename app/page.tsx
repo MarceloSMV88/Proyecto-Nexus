@@ -231,80 +231,263 @@ function TopBar({ title, subtitle, onMenuClick }: { title: string; subtitle?: st
 }
 
 // ─── DASHBOARD ───────────────────────────────────────────────
+
+function AlertItem({ sev, icon, title, detail }: { sev:string; icon:string; title:string; detail:string }) {
+  const t = sev==='red'   ? { color:'#FFB0BF', bg:'rgba(255,77,109,0.10)',  border:'rgba(255,77,109,0.30)' }
+           : sev==='amber' ? { color:'#FFD08A', bg:'rgba(245,166,35,0.10)',  border:'rgba(245,166,35,0.30)' }
+           :                 { color:'#B5D6FF', bg:'rgba(77,158,255,0.10)',  border:'rgba(77,158,255,0.30)' };
+  return (
+    <div className="flex gap-3 p-3 rounded-xl" style={{ background:'rgba(255,255,255,0.02)', border:'1px solid var(--line)' }}>
+      <div className="rounded-lg flex items-center justify-center flex-shrink-0" style={{ width:32, height:32, color:t.color, background:t.bg, border:`1px solid ${t.border}` }}>
+        <I name={icon} size={14}/>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] font-medium leading-tight">{title}</div>
+        <div className="text-[11.5px] mt-0.5" style={{ color:'var(--text-2)' }}>{detail}</div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectMultiSelectCompact({ projects, selected, onToggle, onClear, open, setOpen }: any) {
+  const selectedProjects = projects.filter((p:any) => selected.includes(p.id));
+  const showAll = selected.length === 0;
+  return (
+    <Card className="p-3" strong>
+      <div className="flex items-center gap-3">
+        <div className="rounded-lg flex items-center justify-center flex-shrink-0" style={{ width:32, height:32, background:'rgba(77,158,255,0.10)', border:'1px solid rgba(77,158,255,0.30)', color:'#4D9EFF' }}>
+          <I name="folder-open" size={15}/>
+        </div>
+        <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+          {showAll ? (
+            <span className="text-[12.5px] font-medium">Vista: todos los proyectos</span>
+          ) : selectedProjects.length <= 3 ? (
+            selectedProjects.map((p:any) => {
+              const m = scopeMeta(p.scope);
+              return (
+                <span key={p.id} className="pill !text-[11px]" style={{ background:m.bg, borderColor:m.border, color:m.color, cursor:'pointer', gap:'4px', display:'inline-flex', alignItems:'center' }} onClick={()=>onToggle(p.id)}>
+                  <I name={m.icon} size={10}/>{p.name}<I name="x" size={9} style={{ opacity:0.6 }}/>
+                </span>
+              );
+            })
+          ) : (
+            <span className="pill pill-blue !text-[11px]"><I name="check" size={10}/>{selected.length} proyectos seleccionados</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {!showAll && <button className="btn btn-ghost !h-7 !text-[11px]" onClick={onClear}>Ver todos</button>}
+          <button className="btn !h-7 !text-[11px]" onClick={()=>setOpen(!open)}>
+            <I name={open?'chevron-up':'filter'} size={11}/>{open?'Cerrar':'Filtrar'}
+          </button>
+        </div>
+      </div>
+      {open && (
+        <div className="hairline-t mt-3 pt-3 grid grid-cols-2 md:grid-cols-4 gap-2 fade-in">
+          {projects.map((p:any) => {
+            const isSel = selected.includes(p.id);
+            const m = scopeMeta(p.scope);
+            return (
+              <button key={p.id} onClick={()=>onToggle(p.id)} className="flex items-center gap-2 p-2 rounded-lg text-left transition-all" style={{ background:isSel?'rgba(77,158,255,0.08)':'rgba(255,255,255,0.02)', border:`1px solid ${isSel?'rgba(77,158,255,0.40)':'var(--line)'}` }}>
+                <span className="w-3.5 h-3.5 rounded flex items-center justify-center flex-shrink-0" style={{ background:isSel?'#4D9EFF':'rgba(255,255,255,0.04)', border:`1px solid ${isSel?'#4D9EFF':'var(--line-strong)'}` }}>
+                  {isSel && <I name="check" size={9} color="#0A0A12"/>}
+                </span>
+                <span className="rounded flex items-center justify-center flex-shrink-0" style={{ width:20, height:20, background:m.bg, border:`1px solid ${m.border}`, color:m.color }}>
+                  <I name={m.icon} size={10}/>
+                </span>
+                <span className="text-[11.5px] font-medium truncate">{p.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject: (id: string) => void }) {
-  const totalBudget = projects.reduce((a:number,p:any)=>a+(p.budget||0),0);
-  const totalExec = projects.reduce((a:number,p:any)=>a+(p.executed||0),0);
-  const remaining = totalBudget - totalExec;
-  const variation = totalBudget > 0 ? ((totalExec-totalBudget)/totalBudget)*100 : 0;
+  const [filterIds, setFilterIds] = useState<string[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const scoped = useMemo(
+    () => filterIds.length > 0 ? projects.filter(p => filterIds.includes(p.id)) : projects,
+    [filterIds, projects]
+  );
+
+  const totalBudget = scoped.reduce((a:number,p:any) => a+(p.budget||0), 0);
+  const totalExec   = scoped.reduce((a:number,p:any) => a+(p.executed||0), 0);
+  const remaining   = totalBudget - totalExec;
+  const variation   = totalBudget > 0 ? ((totalExec-totalBudget)/totalBudget)*100 : 0;
   const vUp = useCountUp(Math.abs(variation));
+
+  const projWithROI  = scoped.filter((p:any) => p.roi != null);
+  const projWithQual = scoped.filter((p:any) => (p.qualitative||[]).length > 0);
+  const avgROI  = projWithROI.length  ? projWithROI.reduce((a:number,p:any) => a+(p.roi||0), 0) / projWithROI.length : 0;
+  const avgQual = projWithQual.length ? projWithQual.reduce((a:number,p:any) =>
+    a + (p.qualitative||[]).reduce((s:number,d:any)=>s+d.score,0)/p.qualitative.length, 0) / projWithQual.length : 0;
+
+  const alerts = useMemo(() => [
+    ...scoped.filter((p:any) => p.health==='danger').map((p:any) => ({
+      id:p.id+'_over', sev:'red', icon:'alert-triangle',
+      title:`${p.name} sobre presupuesto`,
+      detail:`${p.progress||0}% ejecutado · ${fmtCLP(p.executed||0)} de ${fmtCLP(p.budget||0)}`
+    })),
+    ...scoped.filter((p:any) => p.health==='warn').map((p:any) => ({
+      id:p.id+'_warn', sev:'amber', icon:'trending-up',
+      title:`${p.name} cerca del límite`,
+      detail:`${p.progress||0}% ejecutado · quedan ${fmtCLP(Math.max(0,(p.budget||0)-(p.executed||0)))}`
+    })),
+    ...scoped.filter((p:any) => {
+      if (!p.next_date) return false;
+      const d = Math.ceil((new Date(p.next_date).getTime()-Date.now())/86400000);
+      return d>=0 && d<=10;
+    }).map((p:any) => {
+      const d = Math.ceil((new Date(p.next_date).getTime()-Date.now())/86400000);
+      return { id:p.id+'_hito', sev:'blue', icon:'calendar',
+        title:p.next_label||'Hito próximo',
+        detail:`${p.name} · ${d===0?'hoy':`en ${d}d`}` };
+    }),
+  ], [scoped]);
+
+  const MOOD_TONE: Record<string,{color:string;bg:string;border:string}> = {
+    jade:  {color:'#6FFFCB',bg:'rgba(0,214,143,0.07)',   border:'rgba(0,214,143,0.28)'},
+    amber: {color:'#FFD08A',bg:'rgba(245,166,35,0.07)',  border:'rgba(245,166,35,0.28)'},
+    blue:  {color:'#B5D6FF',bg:'rgba(77,158,255,0.07)',  border:'rgba(77,158,255,0.28)'},
+    violet:{color:'#D5C2FF',bg:'rgba(168,140,255,0.07)',border:'rgba(168,140,255,0.28)'},
+  };
+  const MOOD_KEYS = ['jade','amber','blue','violet'];
+  const moods = scoped
+    .filter((p:any) => (p.qualitative||[]).some((d:any)=>d.note))
+    .slice(0,5)
+    .map((p:any,i:number) => {
+      const best = (p.qualitative||[]).filter((d:any)=>d.note).sort((a:any,b:any)=>b.score-a.score)[0];
+      return { id:p.id, project:p.name, note:best?.note, score:best?.score, dim:best?.dim, tone:MOOD_KEYS[i%MOOD_KEYS.length] };
+    });
+
+  function toggleFilter(pid:string) { setFilterIds(s=>s.includes(pid)?s.filter(x=>x!==pid):[...s,pid]); }
 
   return (
     <div className="p-4 md:p-8 space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        {[
-          { label:'Presupuesto Total', value:totalBudget, sub:`${projects.length} proyectos` },
-          { label:'Ejecutado', value:totalExec, sub:`${totalBudget>0?((totalExec/totalBudget)*100).toFixed(1):0}% del total` },
-          { label:'Por Ejecutar', value:Math.abs(remaining), sub:remaining<0?'déficit':'disponible' },
-        ].map(kpi => (
-          <Card key={kpi.label} className="p-4 md:p-5 card-hover rise" style={{ minHeight:100 }}>
-            <div className="eyebrow text-[10px] md:text-[11px]">{kpi.label}</div>
-            <div className="mt-2 md:mt-3 font-mono font-semibold" style={{ fontSize:22, lineHeight:1.05 }}><MoneyCounter value={kpi.value}/></div>
-            <div className="mt-1 text-[11px] md:text-[12px]" style={{ color:'var(--text-2)' }}>{kpi.sub}</div>
-          </Card>
-        ))}
-        <Card className="p-4 md:p-5 card-hover rise" style={{ minHeight:100 }}>
-          <div className="eyebrow text-[10px] md:text-[11px]">Variación</div>
-          <div className="mt-2 md:mt-3 font-mono font-semibold" style={{ fontSize:26, color:variation>5?'#FFB0BF':variation>0?'#FFD08A':'#6FFFCB' }}>
+      {/* Project filter bar */}
+      <ProjectMultiSelectCompact projects={projects} selected={filterIds} onToggle={toggleFilter} onClear={()=>setFilterIds([])} open={pickerOpen} setOpen={setPickerOpen}/>
+
+      {/* 5-KPI row */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
+        <Card className="p-4 md:p-5 card-hover rise" style={{ minHeight:110 }}>
+          <div className="eyebrow text-[10px] md:text-[11px]">Presupuesto Total</div>
+          <div className="mt-2 md:mt-3 font-mono font-semibold" style={{ fontSize:22, lineHeight:1.05 }}><MoneyCounter value={totalBudget}/></div>
+          <div className="mt-1 text-[11px]" style={{ color:'var(--text-2)' }}>{scoped.length} proyecto{scoped.length!==1?'s':''} activos</div>
+        </Card>
+        <Card className="p-4 md:p-5 card-hover rise" style={{ minHeight:110 }}>
+          <div className="eyebrow text-[10px] md:text-[11px]">Ejecutado</div>
+          <div className="mt-2 md:mt-3 font-mono font-semibold" style={{ fontSize:22, lineHeight:1.05 }}><MoneyCounter value={totalExec}/></div>
+          <div className="mt-1 text-[11px]" style={{ color:'var(--text-2)' }}>{totalBudget>0?((totalExec/totalBudget)*100).toFixed(1):0}% del total</div>
+        </Card>
+        <Card className="p-4 md:p-5 card-hover rise" style={{ minHeight:110 }}>
+          <div className="flex items-start justify-between">
+            <div className="eyebrow text-[10px] md:text-[11px]">Por Ejecutar</div>
+            <span className={'pill !py-0.5 !text-[10px] '+(remaining<0?'pill-red':'pill-jade')}>{remaining<0?'déficit':'saludable'}</span>
+          </div>
+          <div className="mt-2 font-mono font-semibold" style={{ fontSize:22, lineHeight:1.05 }}><MoneyCounter value={Math.abs(remaining)}/></div>
+          <div className="mt-1 text-[11px]" style={{ color:'var(--text-2)' }}>{remaining<0?'déficit a cubrir':'disponible'}</div>
+        </Card>
+        <Card className="p-4 md:p-5 card-hover rise" style={{ minHeight:110 }}>
+          <div className="flex items-start justify-between">
+            <div className="eyebrow text-[10px] md:text-[11px]">Variación</div>
+            <span className={'pill !py-0.5 !text-[10px] '+(variation>5?'pill-red':variation>0?'pill-amber':'pill-jade')}>
+              <I name={variation>0?'trending-up':'trending-down'} size={10}/>
+              {variation>0?'sobre plan':'bajo plan'}
+            </span>
+          </div>
+          <div className="mt-2 font-mono font-semibold" style={{ fontSize:26, color:variation>5?'#FFB0BF':variation>0?'#FFD08A':'#6FFFCB' }}>
             {variation>=0?'+':''}{vUp.toFixed(1)}<span className="text-lg opacity-70">%</span>
           </div>
           <div className="mt-1 text-[11px]" style={{ color:'var(--text-2)' }}>frente a presupuesto</div>
         </Card>
-      </div>
-
-      {projects.length > 0 && (
-        <Card className="p-4 md:p-6">
-          <div className="eyebrow mb-1">Presupuesto vs Ejecución</div>
-          <div className="flex items-center gap-4 mb-4">
-            <h2 className="font-bold text-[16px] md:text-[18px]" style={{ fontFamily:'Sora' }}>Comparativa por proyecto</h2>
-            <div className="flex items-center gap-3 ml-auto">
-              {[{color:'rgba(77,158,255,0.5)',label:'Presupuesto'},{color:'#00D68F',label:'Ejecutado'}].map(l=>(
-                <span key={l.label} className="flex items-center gap-1.5 text-[11px]" style={{ color:'var(--text-2)' }}>
-                  <span className="inline-block w-3 h-2.5 rounded-sm" style={{ background:l.color }}/>
-                  {l.label}
-                </span>
-              ))}
+        <Card className="p-4 md:p-5 card-hover rise col-span-2 md:col-span-1" style={{ minHeight:110 }}>
+          <div className="eyebrow text-[10px] md:text-[11px]">Retornos</div>
+          <div className="mt-2 md:mt-3 flex items-baseline gap-3">
+            <div>
+              <div className="text-[10px] mb-0.5" style={{ color:'var(--text-2)' }}>ROI financiero</div>
+              <div className="font-mono font-semibold" style={{ fontSize:20, color:avgROI>0?'#6FFFCB':'var(--text-1)' }}>{avgROI>0?`+${avgROI.toFixed(0)}%`:'—'}</div>
+            </div>
+            <div className="self-stretch w-px" style={{ background:'var(--line)' }}/>
+            <div>
+              <div className="text-[10px] mb-0.5" style={{ color:'var(--text-2)' }}>Cualitativo</div>
+              <div className="font-mono font-semibold" style={{ fontSize:20, color:avgQual>=8?'#6FFFCB':avgQual>=5?'#FFD08A':'var(--text-1)' }}>{avgQual>0?`${avgQual.toFixed(1)}/10`:'—'}</div>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={projects.map(p=>({ name: p.name.length>13?p.name.slice(0,13)+'…':p.name, Presupuesto: p.budget||0, Ejecutado: p.executed||0, _health: p.health }))} margin={{ top:4, right:8, left:0, bottom:4 }} barCategoryGap="28%">
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false}/>
-              <XAxis dataKey="name" tick={{ fill:'var(--text-2)', fontSize:11 }} axisLine={false} tickLine={false}/>
-              <YAxis tick={{ fill:'var(--text-2)', fontSize:10 }} axisLine={false} tickLine={false} tickFormatter={n=>fmtShort(n)} width={52}/>
-              <Tooltip
-                contentStyle={{ background:'#0F0F18', border:'1px solid var(--line-strong)', borderRadius:10, fontSize:12, padding:'8px 12px' }}
-                formatter={(v:any) => [fmtCLP(Number(v)), undefined]}
-                labelStyle={{ color:'var(--text-1)', fontWeight:600, marginBottom:4 }}
-                cursor={{ fill:'rgba(255,255,255,0.03)' }}/>
-              <Bar dataKey="Presupuesto" fill="rgba(77,158,255,0.25)" radius={[3,3,0,0]} maxBarSize={32}/>
-              <Bar dataKey="Ejecutado" radius={[3,3,0,0]} maxBarSize={32}>
-                {projects.map((p:any,i:number)=>(
-                  <Cell key={i} fill={p.health==='danger'?'#FF4D6D':p.health==='warn'?'#F5A623':'#00D68F'}/>
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="mt-1.5 text-[10px]" style={{ color:'var(--text-2)' }}>{projWithROI.length} con ROI · {projWithQual.length} evaluados</div>
         </Card>
+      </div>
+
+      {/* Chart + Alerts */}
+      {scoped.length > 0 && (
+        <div className="grid gap-4" style={{ gridTemplateColumns: alerts.length>0 ? '1fr' : '1fr' }}>
+          <div className={`grid gap-4 ${alerts.length>0 ? 'md:grid-cols-[1fr_360px]' : ''}`}>
+            <Card className="p-4 md:p-6">
+              <div className="flex items-end justify-between mb-4">
+                <div>
+                  <div className="eyebrow mb-1">Presupuesto vs Ejecución</div>
+                  <h3 className="font-bold text-[16px] md:text-[18px]" style={{ fontFamily:'Sora' }}>Comparativa por proyecto</h3>
+                </div>
+                <div className="flex items-center gap-3">
+                  {[{color:'rgba(77,158,255,0.5)',label:'Presupuesto'},{color:'#00D68F',label:'Ejecutado'}].map(l=>(
+                    <span key={l.label} className="hidden md:flex items-center gap-1.5 text-[11px]" style={{ color:'var(--text-2)' }}>
+                      <span className="inline-block w-3 h-2.5 rounded-sm" style={{ background:l.color }}/>{l.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={scoped.map((p:any)=>({ name:p.name.length>13?p.name.slice(0,13)+'…':p.name, Presupuesto:p.budget||0, Ejecutado:p.executed||0 }))} margin={{ top:4, right:8, left:0, bottom:4 }} barCategoryGap="28%">
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false}/>
+                  <XAxis dataKey="name" tick={{ fill:'var(--text-2)', fontSize:11 }} axisLine={false} tickLine={false}/>
+                  <YAxis tick={{ fill:'var(--text-2)', fontSize:10 }} axisLine={false} tickLine={false} tickFormatter={n=>fmtShort(n)} width={52}/>
+                  <Tooltip contentStyle={{ background:'#0F0F18', border:'1px solid var(--line-strong)', borderRadius:10, fontSize:12, padding:'8px 12px' }} formatter={(v:any)=>[fmtCLP(Number(v)),undefined]} labelStyle={{ color:'var(--text-1)', fontWeight:600, marginBottom:4 }} cursor={{ fill:'rgba(255,255,255,0.03)' }}/>
+                  <Bar dataKey="Presupuesto" fill="rgba(77,158,255,0.25)" radius={[3,3,0,0]} maxBarSize={32}/>
+                  <Bar dataKey="Ejecutado" radius={[3,3,0,0]} maxBarSize={32}>
+                    {scoped.map((p:any,i:number)=><Cell key={i} fill={p.health==='danger'?'#FF4D6D':p.health==='warn'?'#F5A623':'#00D68F'}/>)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
+
+            {alerts.length > 0 && (
+              <Card className="p-4 md:p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-[15px] flex items-center gap-2" style={{ fontFamily:'Sora' }}>
+                    <I name="bell-ring" size={15} color="#F5A623"/>Alertas
+                  </h3>
+                  {alerts.filter(a=>a.sev==='red').length > 0 && (
+                    <span className="pill pill-red"><span className="dot dot-red"/>{alerts.filter(a=>a.sev==='red').length} crítica{alerts.filter(a=>a.sev==='red').length!==1?'s':''}</span>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2 overflow-y-auto" style={{ maxHeight:260 }}>
+                  {alerts.map(a=><AlertItem key={a.id} sev={a.sev} icon={a.icon} title={a.title} detail={a.detail}/>)}
+                </div>
+              </Card>
+            )}
+          </div>
+        </div>
       )}
 
+      {/* Project map */}
       <div>
         <div className="flex items-end justify-between mb-4">
-          <div><div className="eyebrow mb-1">Mapa de proyectos</div><h2 className="font-bold text-[18px] md:text-[20px]" style={{ fontFamily:'Sora' }}>{projects.length} iniciativas activas</h2></div>
+          <div>
+            <div className="eyebrow mb-1">Mapa de proyectos</div>
+            <h2 className="font-bold text-[18px] md:text-[20px]" style={{ fontFamily:'Sora' }}>
+              {scoped.length} {scoped.length===1?'iniciativa':'iniciativas'} {filterIds.length>0?'seleccionadas':'activas'}
+            </h2>
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {projects.map((p:any) => {
+          {scoped.map((p:any) => {
             const m = scopeMeta(p.scope);
+            const daysLeft = p.next_date ? Math.ceil((new Date(p.next_date).getTime()-Date.now())/86400000) : null;
+            const urgent = daysLeft != null && daysLeft >= 0 && daysLeft < 8;
             return (
-              <div key={p.id} className="glass rounded-2xl p-4 md:p-5 card-hover cursor-pointer rise" onClick={() => onOpenProject(p.id)}>
+              <div key={p.id} className="glass rounded-2xl p-4 md:p-5 card-hover cursor-pointer rise" onClick={()=>onOpenProject(p.id)}>
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex items-center gap-2.5">
                     <span className="rounded-md flex items-center justify-center" style={{ width:32,height:32,background:m.bg,border:`1px solid ${m.border}`,color:m.color }}><I name={m.icon} size={15}/></span>
@@ -315,21 +498,51 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
                 <div className="mt-3">
                   <div className="flex items-baseline justify-between mb-1.5">
                     <span className="text-[11px]" style={{ color:'var(--text-2)' }}>Ejecución</span>
-                    <span className="font-mono text-[12px]" style={{ color:p.health==='danger'?'#FFB0BF':'#6FFFCB' }}>{p.progress||0}%</span>
+                    <span className="font-mono text-[12px]" style={{ color:p.health==='danger'?'#FFB0BF':p.health==='warn'?'#FFD08A':'#6FFFCB' }}>{p.progress||0}%</span>
                   </div>
                   <ProgressBar value={p.progress||0} tone={p.health==='danger'?'danger':p.health==='warn'?'warn':'ok'}/>
                   <div className="flex justify-between mt-2 font-mono text-[11px]" style={{ color:'var(--text-2)' }}><span>{fmtShort(p.executed||0)}</span><span>de {fmtShort(p.budget||0)}</span></div>
                 </div>
                 <div className="mt-3 pt-3 hairline-t flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0"><I name="calendar" size={12} color="var(--text-2)"/><span className="text-[11px] truncate" style={{ color:'var(--text-1)' }}>{p.next_label||'Sin hitos'}</span></div>
-                  <span className="font-mono text-[11px] flex-shrink-0" style={{ color:'var(--text-2)' }}>{p.next_date?fmtDateShort(p.next_date):'—'}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <I name={urgent?'alert-circle':'calendar'} size={12} color={urgent?'#F5A623':'var(--text-2)'}/>
+                    <span className="text-[11px] truncate" style={{ color:'var(--text-1)' }}>{p.next_label||'Sin hitos'}</span>
+                  </div>
+                  <span className="font-mono text-[11px] flex-shrink-0" style={{ color:urgent?'#FFD08A':'var(--text-2)' }}>
+                    {daysLeft!=null && daysLeft>=0 ? (daysLeft===0?'hoy':`en ${daysLeft}d`) : p.next_date?fmtDateShort(p.next_date):'—'}
+                  </span>
                 </div>
               </div>
             );
           })}
-          {projects.length===0 && <div className="col-span-3 glass rounded-2xl p-12 text-center" style={{ color:'var(--text-2)' }}><I name="folder-open" size={32} className="mx-auto mb-3 opacity-40"/><p>No hay proyectos. Crea uno desde Proyectos.</p></div>}
+          {scoped.length===0 && <div className="col-span-3 glass rounded-2xl p-12 text-center" style={{ color:'var(--text-2)' }}><I name="folder-open" size={32} className="mx-auto mb-3 opacity-40"/><p>{filterIds.length>0?'Sin proyectos en el filtro.':'No hay proyectos. Crea uno desde Proyectos.'}</p></div>}
         </div>
       </div>
+
+      {/* Mood board — qualitative highlights */}
+      {moods.length > 0 && (
+        <Card className="p-4 md:p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <I name="sparkles" size={16} color="#F5A623"/>
+            <h3 className="font-bold text-[15px]" style={{ fontFamily:'Sora' }}>Retornos cualitativos</h3>
+            <span className="text-[11px] hidden md:block" style={{ color:'var(--text-2)' }}>Las mejores valoraciones registradas</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            {moods.map((mood:any) => {
+              const t = MOOD_TONE[mood.tone];
+              return (
+                <div key={mood.id} className="rounded-xl p-3" style={{ background:t.bg, border:`1px solid ${t.border}` }}>
+                  <p className="text-[12.5px] leading-snug" style={{ color:t.color, fontStyle:'italic' }}>"{mood.note}"</p>
+                  <div className="flex items-center justify-between mt-2 gap-2">
+                    <span className="text-[10.5px] truncate" style={{ color:'var(--text-2)' }}>{mood.dim} · {mood.project}</span>
+                    <span className="font-mono text-[11px] flex-shrink-0" style={{ color:t.color }}>{mood.score}/10</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
