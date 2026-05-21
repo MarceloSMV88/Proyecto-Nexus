@@ -410,44 +410,30 @@ function NewProjectPanel({ open, onClose }: { open:boolean; onClose:()=>void }) 
   );
 }
 
-// ─── PROJECT DETAIL ──────────────────────────────────────────
-function ProjectDetail({ project, onBack, onRefresh }: { project:any; onBack:()=>void; onRefresh:()=>void }) {
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({...project});
-  const [loading, setLoading] = useState(false);
-  async function handleSave() {
-    setLoading(true);
-    const progress = form.budget>0?Math.round((form.executed/form.budget)*100):0;
-    const health = progress>=100?'danger':progress>=80?'warn':'ok';
-    const { error } = await supabase.from('proyectos').update({ name:form.name, description:form.description, scope:form.scope, budget:Number(form.budget), executed:Number(form.executed), status:form.status, start_date:form.start_date, end_date:form.end_date, next_label:form.next_label, next_date:form.next_date, progress, health }).eq('id',project.id);
-    setLoading(false);
-    if (!error) { setEditing(false); onRefresh(); }
-    else alert('Error: '+error.message);
-  }
-  const progress = form.budget>0?Math.round((Number(form.executed)/Number(form.budget))*100):0;
-  return (
-    <div className="p-4 md:p-8 space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <button className="btn btn-ghost !h-8 !w-8 !p-0" onClick={onBack}><I name="arrow-left" size={16}/></button>
-        <div className="flex-1"><div className="eyebrow mb-0.5">Detalle del proyecto</div><h1 className="font-bold text-[20px] md:text-[24px]" style={{ fontFamily:'Sora' }}>{project.name}</h1></div>
-        <StatusPill status={project.status||'En curso'}/>
-        {editing
-          ? <><button className="btn btn-ghost" onClick={()=>{setEditing(false);setForm({...project});}}>Cancelar</button><button className="btn btn-primary" onClick={handleSave} disabled={loading}><I name="check" size={14}/>{loading?'Guardando...':'Guardar'}</button></>
-          : <button className="btn" onClick={()=>setEditing(true)}><I name="pencil" size={14}/><span className="hidden md:inline">Editar</span></button>}
-      </div>
+// ─── PROJECT TABS ─────────────────────────────────────────────
+const PROJECT_TABS = [
+  { id: 'resumen',      icon: 'layout-dashboard', label: 'Resumen' },
+  { id: 'presupuesto',  icon: 'wallet',           label: 'Presupuesto' },
+  { id: 'cotizaciones', icon: 'file-text',        label: 'Cotizaciones' },
+  { id: 'insumos',      icon: 'package',          label: 'Insumos' },
+  { id: 'retornos',     icon: 'sparkles',         label: 'Retornos' },
+  { id: 'timeline',     icon: 'milestone',        label: 'Timeline' },
+] as const;
+type ProjectTab = typeof PROJECT_TABS[number]['id'];
 
+function TabResumen({ project, form, setForm, editing, progress }: any) {
+  return (
+    <div className="space-y-4">
       <div className="grid grid-cols-3 gap-3 md:gap-4">
         {[{label:'Presupuesto',value:fmtCLP(Number(form.budget)||0)},{label:'Ejecutado',value:fmtCLP(Number(form.executed)||0)},{label:'Avance',value:`${progress}%`}].map(k=>(
           <Card key={k.label} className="p-4 md:p-5"><div className="eyebrow text-[10px]">{k.label}</div><div className="mt-2 font-mono font-semibold text-[20px] md:text-[24px]">{k.value}</div></Card>
         ))}
       </div>
-
       <Card className="p-4 md:p-5">
         <div className="eyebrow mb-3">Progreso de ejecución</div>
         <ProgressBar value={progress} tone={progress>=100?'danger':progress>=80?'warn':'ok'} height={10}/>
         <div className="flex justify-between mt-2 font-mono text-[11px] md:text-[12px]" style={{ color:'var(--text-2)' }}><span>{fmtCLP(Number(form.executed)||0)} ejecutado</span><span>{fmtCLP(Number(form.budget)||0)} presupuestado</span></div>
       </Card>
-
       {editing ? (
         <Card className="p-4 md:p-6">
           <div className="eyebrow mb-4">Editar proyecto</div>
@@ -477,6 +463,409 @@ function ProjectDetail({ project, onBack, onRefresh }: { project:any; onBack:()=
           </div>
         </Card>
       )}
+    </div>
+  );
+}
+
+function TabPresupuesto({ project, onRefresh }: { project:any; onRefresh:()=>void }) {
+  const [editing, setEditing] = useState(false);
+  const [vals, setVals] = useState({ budget: Number(project.budget)||0, executed: Number(project.executed)||0 });
+  const [loading, setLoading] = useState(false);
+  useEffect(() => { setVals({ budget: Number(project.budget)||0, executed: Number(project.executed)||0 }); }, [project.budget, project.executed]);
+  const progress = vals.budget > 0 ? Math.round((vals.executed / vals.budget) * 100) : 0;
+  const remaining = vals.budget - vals.executed;
+  async function handleSave() {
+    setLoading(true);
+    const prog = vals.budget>0?Math.round((vals.executed/vals.budget)*100):0;
+    const health = prog>=100?'danger':prog>=80?'warn':'ok';
+    const { error } = await supabase.from('proyectos').update({ budget:vals.budget, executed:vals.executed, progress:prog, health }).eq('id',project.id);
+    setLoading(false);
+    if (!error) { setEditing(false); onRefresh(); }
+    else alert('Error: '+error.message);
+  }
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label:'Presupuesto total', value:fmtCLP(vals.budget),         color:'var(--text-0)' },
+          { label:'Ejecutado',         value:fmtCLP(vals.executed),        color:progress>=100?'#FFB0BF':progress>=80?'#FFD08A':'var(--text-0)' },
+          { label:'Disponible',        value:fmtCLP(Math.abs(remaining)), color:remaining<0?'#FFB0BF':'#6FFFCB' },
+          { label:'Ejecución',         value:`${progress}%`,               color:progress>=100?'#FFB0BF':progress>=80?'#FFD08A':'#6FFFCB' },
+        ].map(k=>(
+          <Card key={k.label} className="p-4 md:p-5">
+            <div className="eyebrow text-[10px]">{k.label}</div>
+            <div className="mt-2 font-mono font-semibold text-[20px] md:text-[22px]" style={{ color:k.color }}>{k.value}</div>
+            {k.label==='Disponible' && <div className="text-[10px] mt-1" style={{ color:'var(--text-3)' }}>{remaining<0?'déficit':'por ejecutar'}</div>}
+          </Card>
+        ))}
+      </div>
+      <Card className="p-4 md:p-5">
+        <div className="eyebrow mb-3">Progreso de ejecución presupuestaria</div>
+        <ProgressBar value={progress} tone={progress>=100?'danger':progress>=80?'warn':'ok'} height={12}/>
+        <div className="flex justify-between mt-2 font-mono text-[12px]" style={{ color:'var(--text-2)' }}>
+          <span>{fmtCLP(vals.executed)} ejecutado</span>
+          <span className="font-semibold" style={{ color:progress>=100?'#FFB0BF':progress>=80?'#FFD08A':'var(--jade)' }}>{progress}%</span>
+          <span>de {fmtCLP(vals.budget)}</span>
+        </div>
+      </Card>
+      <Card className="p-4 md:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="eyebrow">Actualizar montos</div>
+          {!editing
+            ? <button className="btn btn-ghost !h-8" onClick={()=>setEditing(true)}><I name="pencil" size={13}/>Editar</button>
+            : <div className="flex gap-2">
+                <button className="btn btn-ghost !h-8" onClick={()=>{setEditing(false);setVals({budget:Number(project.budget)||0,executed:Number(project.executed)||0});}}>Cancelar</button>
+                <button className="btn btn-primary !h-8" onClick={handleSave} disabled={loading}><I name="check" size={13}/>{loading?'Guardando...':'Guardar'}</button>
+              </div>
+          }
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div><label className="label">Presupuesto total (CLP)</label><input className="input" type="number" disabled={!editing} value={vals.budget} onChange={e=>setVals({...vals,budget:Number(e.target.value)})}/></div>
+          <div><label className="label">Monto ejecutado (CLP)</label><input className="input" type="number" disabled={!editing} value={vals.executed} onChange={e=>setVals({...vals,executed:Number(e.target.value)})}/></div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+const QUOTE_STATUS_CLS: Record<string,string> = { 'Vigente':'pill-blue','Vencida':'pill-red','Adjudicada':'pill-jade','Rechazada':'','Pendiente':'' };
+
+function TabCotizaciones({ quotes, project, onRefresh }: { quotes:any[]; project:any; onRefresh:()=>void }) {
+  const [newOpen, setNewOpen] = useState(false);
+  const total      = quotes.reduce((a,q)=>a+(q.total||q.amount||0),0);
+  const adjudicado = quotes.filter(q=>q.status==='Adjudicada').reduce((a,q)=>a+(q.total||q.amount||0),0);
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-3">
+          <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">Total cotizado</div><div className="font-mono font-semibold text-[18px] mt-1">{fmtCLP(total)}</div></Card>
+          <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">Adjudicado</div><div className="font-mono font-semibold text-[18px] mt-1" style={{ color:'#6FFFCB' }}>{fmtCLP(adjudicado)}</div></Card>
+        </div>
+        <button className="btn btn-primary" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nueva cotización</button>
+      </div>
+      <div className="overflow-x-auto">
+        <Card className="overflow-hidden" style={{ minWidth:500 }}>
+          <table className="tbl">
+            <thead><tr><th>Referencia</th><th>Proveedor</th><th>Monto</th><th style={{width:100}}>Vence</th><th style={{width:120}}>Estado</th><th style={{width:40}}></th></tr></thead>
+            <tbody>
+              {quotes.map(q=>(
+                <tr key={q.id}>
+                  <td><div className="font-mono text-[12.5px]">{q.ref||q.id}</div>{q.notes&&<div className="text-[10px]" style={{color:'var(--text-3)'}}>{q.notes}</div>}</td>
+                  <td className="font-medium">{q.supplier||q.vendor||'—'}</td>
+                  <td className="font-mono">{fmtCLP(q.total||q.amount||0)}</td>
+                  <td className="font-mono text-[12px]" style={{color:'var(--text-1)'}}>{fmtDateShort(q.expires||q.date)}</td>
+                  <td><span className={'pill '+(QUOTE_STATUS_CLS[q.status]||'')}>{q.status||'Pendiente'}</span></td>
+                  <td><button className="btn btn-ghost !w-8 !p-0"><I name="more-horizontal" size={14}/></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {quotes.length===0 && (
+            <div className="p-12 text-center" style={{color:'var(--text-2)'}}>
+              <I name="file-text" size={32} className="mx-auto mb-3 opacity-40"/>
+              <p className="mb-4">Sin cotizaciones para este proyecto.</p>
+              <button className="btn btn-primary mx-auto" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nueva cotización</button>
+            </div>
+          )}
+        </Card>
+      </div>
+      <NewQuotePanel open={newOpen} onClose={()=>{setNewOpen(false);onRefresh();}} projects={[project]} defaultProjectId={project.id}/>
+    </div>
+  );
+}
+
+function TabInsumos({ insumos, project, onRefresh }: { insumos:any[]; project:any; onRefresh:()=>void }) {
+  const [newOpen, setNewOpen] = useState(false);
+  const totalCost = insumos.reduce((a,i)=>a+((i.unit_price||0)*(i.quantity||1)),0);
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">Costo total insumos</div><div className="font-mono font-semibold text-[18px] mt-1">{fmtCLP(totalCost)}</div></Card>
+        <button className="btn btn-primary" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nuevo insumo</button>
+      </div>
+      <div className="overflow-x-auto">
+        <Card className="overflow-hidden" style={{ minWidth:520 }}>
+          <table className="tbl">
+            <thead><tr><th>Insumo</th><th style={{width:120}}>Categoría</th><th style={{width:80}}>Cant.</th><th style={{width:100}}>Unidad</th><th style={{width:140}}>P. unitario</th><th style={{width:140}}>Subtotal</th><th style={{width:40}}></th></tr></thead>
+            <tbody>
+              {insumos.map(i=>{
+                const catMeta = CAT_META[i.category]||CAT_META['Otro'];
+                const subtotal = (i.unit_price||0)*(i.quantity||1);
+                return (
+                  <tr key={i.id}>
+                    <td><div className="font-medium">{i.name}</div>{i.note&&<div className="text-[10.5px]" style={{color:'var(--text-3)'}}>{i.note}</div>}</td>
+                    <td><span className={'pill '+(catMeta.cls||'')}>{i.category||'Otro'}</span></td>
+                    <td className="font-mono text-[12px]">{i.quantity||1}</td>
+                    <td className="font-mono text-[12px]">{i.unit||'—'}</td>
+                    <td className="font-mono">{fmtCLP(i.unit_price||0)}</td>
+                    <td className="font-mono font-medium">{fmtCLP(subtotal)}</td>
+                    <td><button className="btn btn-ghost !w-8 !p-0"><I name="more-horizontal" size={14}/></button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {insumos.length===0 && (
+            <div className="p-12 text-center" style={{color:'var(--text-2)'}}>
+              <I name="package" size={32} className="mx-auto mb-3 opacity-40"/>
+              <p className="mb-4">Sin insumos para este proyecto.</p>
+              <button className="btn btn-primary mx-auto" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nuevo insumo</button>
+            </div>
+          )}
+        </Card>
+      </div>
+      <NewInsumoPanel open={newOpen} onClose={()=>{setNewOpen(false);onRefresh();}} projects={[project]} defaultProjectId={project.id}/>
+    </div>
+  );
+}
+
+function TabRetornos({ project, onRefresh }: { project:any; onRefresh:()=>void }) {
+  const [evalOpen, setEvalOpen] = useState(false);
+  const qual: any[] = project.qualitative || [];
+  const avg = qual.length ? qual.reduce((a:number,d:any)=>a+d.score,0)/qual.length : 0;
+  const COLORS = ['#00D68F','#4D9EFF','#F5A623','#A88CFF'];
+  const radarData = QUAL_DIMS.map(dim => {
+    const found = qual.find((d:any)=>d.dim===dim||d.dim.startsWith(dim.slice(0,6)));
+    return { dim: dim.slice(0,8), score: found ? found.score : 0 };
+  });
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-3">
+          <Card className="p-3 md:p-4">
+            <div className="eyebrow text-[10px]">Índice cualitativo</div>
+            <div className="font-mono font-semibold text-[22px] mt-1" style={{ color:'var(--jade)' }}>{avg>0?avg.toFixed(1):'—'}<span className="text-[13px] opacity-60">/10</span></div>
+          </Card>
+          {project.roi && <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">ROI estimado</div><div className="font-mono font-semibold text-[22px] mt-1" style={{ color:'#6FFFCB' }}>+{project.roi}%</div></Card>}
+        </div>
+        <button className="btn btn-primary" onClick={()=>setEvalOpen(true)}><I name="pencil" size={14}/>{qual.length?'Editar evaluación':'Nueva evaluación'}</button>
+      </div>
+      {qual.length > 0 ? (
+        <>
+          <Card className="p-4 md:p-6">
+            <div className="eyebrow mb-4">Radar de dimensiones</div>
+            <ResponsiveContainer width="100%" height={280}>
+              <RadarChart data={radarData}>
+                <PolarGrid stroke="rgba(255,255,255,0.06)"/>
+                <PolarAngleAxis dataKey="dim" tick={{ fill:'var(--text-2)', fontSize:11 }}/>
+                <Tooltip contentStyle={{ background:'#0A0A12', border:'1px solid var(--line-strong)', borderRadius:8, fontSize:12 }}/>
+                <Radar name={project.name} dataKey="score" stroke="#00D68F" fill="#00D68F" fillOpacity={0.15}/>
+              </RadarChart>
+            </ResponsiveContainer>
+          </Card>
+          <Card className="p-4 md:p-6">
+            <div className="eyebrow mb-4">Detalle por dimensión</div>
+            <div className="space-y-4">
+              {qual.map((d:any,i:number)=>(
+                <div key={d.dim}>
+                  <div className="flex justify-between mb-1.5"><span className="text-[13px] font-medium">{d.dim}</span><span className="font-mono text-[13px]" style={{ color:COLORS[i%COLORS.length] }}>{d.score}/10</span></div>
+                  <div className="progress" style={{ height:5 }}><i style={{ width:(d.score/10*100)+'%', background:COLORS[i%COLORS.length] }}/></div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </>
+      ) : (
+        <Card className="p-12 text-center">
+          <I name="sparkles" size={32} className="mx-auto mb-3 opacity-40"/>
+          <p style={{ color:'var(--text-2)' }} className="mb-4">Sin evaluaciones de retorno aún.</p>
+          <button className="btn btn-primary mx-auto" onClick={()=>setEvalOpen(true)}><I name="plus" size={14}/>Nueva evaluación</button>
+        </Card>
+      )}
+      <NewEvalPanel open={evalOpen} onClose={()=>{setEvalOpen(false);onRefresh();}} projects={[project]} onSaved={onRefresh} defaultProjectId={project.id}/>
+    </div>
+  );
+}
+
+const HITO_STATUS_META: Record<string,{ color:string; cls:string }> = {
+  'Pendiente':  { color:'#4D9EFF', cls:'pill-blue' },
+  'En curso':   { color:'#F5A623', cls:'pill-amber' },
+  'Completado': { color:'#00D68F', cls:'pill-jade' },
+  'Bloqueado':  { color:'#FF4D6D', cls:'pill-red' },
+};
+const HITO_TYPE_COLOR: Record<string,string> = { 'Hito':'#A88CFF','Entrega':'#4D9EFF','Revisión':'#F5A623','Pago':'#00D68F','Otro':'#7A7E8F' };
+
+function TabTimeline({ hitos, project, onRefresh }: { hitos:any[]; project:any; onRefresh:()=>void }) {
+  const [newOpen, setNewOpen] = useState(false);
+  const completed = hitos.filter(h=>h.status==='Completado').length;
+  const sorted = [...hitos].sort((a,b)=>new Date(a.date||'9999').getTime()-new Date(b.date||'9999').getTime());
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-3">
+          <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">Total hitos</div><div className="font-mono font-semibold text-[18px] mt-1">{hitos.length}</div></Card>
+          <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">Completados</div><div className="font-mono font-semibold text-[18px] mt-1" style={{ color:'var(--jade)' }}>{completed}</div></Card>
+        </div>
+        <button className="btn btn-primary" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nuevo hito</button>
+      </div>
+      {hitos.length===0 ? (
+        <Card className="p-12 text-center">
+          <I name="milestone" size={32} className="mx-auto mb-3 opacity-40"/>
+          <p style={{ color:'var(--text-2)' }} className="mb-4">Sin hitos registrados para este proyecto.</p>
+          <button className="btn btn-primary mx-auto" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Agregar hito</button>
+        </Card>
+      ) : (
+        <Card className="p-4 md:p-6">
+          <div className="eyebrow mb-5">Línea de tiempo</div>
+          <div className="relative">
+            <div className="absolute left-[19px] top-0 bottom-0 w-px" style={{ background:'var(--line)' }}/>
+            <div className="space-y-4">
+              {sorted.map(h=>{
+                const meta = HITO_STATUS_META[h.status]||HITO_STATUS_META['Pendiente'];
+                const typeColor = HITO_TYPE_COLOR[h.type]||HITO_TYPE_COLOR['Otro'];
+                const done = h.status==='Completado';
+                return (
+                  <div key={h.id} className="flex gap-4 relative">
+                    <div className="flex-shrink-0 w-10 flex items-start justify-center pt-0.5 relative z-10">
+                      <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background:done?'rgba(0,214,143,0.15)':'rgba(255,255,255,0.04)', border:`1.5px solid ${done?'#00D68F':meta.color}` }}>
+                        {done ? <I name="check" size={10} color="#00D68F"/> : <span className="w-2 h-2 rounded-full inline-block" style={{ background:meta.color }}/>}
+                      </div>
+                    </div>
+                    <div className="flex-1 glass rounded-xl p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-semibold text-[13px]" style={{ fontFamily:'Sora' }}>{h.label}</div>
+                        <span className={'pill flex-shrink-0 '+(meta.cls||'')} style={{ fontSize:10 }}>{h.status}</span>
+                      </div>
+                      {h.notes && <div className="text-[11px] mt-0.5" style={{ color:'var(--text-2)' }}>{h.notes}</div>}
+                      <div className="flex items-center gap-3 mt-2">
+                        <span className="flex items-center gap-1 text-[11px]" style={{ color:'var(--text-2)' }}><I name="calendar" size={11} color="var(--text-2)"/>{fmtDateShort(h.date)}</span>
+                        <span className="text-[11px] font-medium" style={{ color:typeColor }}>{h.type||'Hito'}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </Card>
+      )}
+      <NewHitoPanel open={newOpen} onClose={()=>{setNewOpen(false);onRefresh();}} projectId={project.id}/>
+    </div>
+  );
+}
+
+function NewHitoPanel({ open, onClose, projectId }: { open:boolean; onClose:()=>void; projectId:string }) {
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ label:'', date:'', type:'Hito', status:'Pendiente', notes:'' });
+  async function handleCreate() {
+    if (!form.label.trim()) return;
+    setLoading(true);
+    const id = 'h'+Date.now();
+    const { error } = await supabase.from('hitos').insert([{ id, project_id:projectId, label:form.label, date:form.date||null, type:form.type, status:form.status, notes:form.notes }]);
+    setLoading(false);
+    if (!error) { setForm({ label:'', date:'', type:'Hito', status:'Pendiente', notes:'' }); onClose(); }
+    else alert('Error: '+error.message);
+  }
+  return (
+    <SlideOver open={open} onClose={onClose} subtitle="Nuevo hito" title="Agregar al timeline">
+      <div className="space-y-5">
+        <div><label className="label">Nombre del hito *</label><input className="input" placeholder="Ej. Entrega de planos, Pago inicial..." value={form.label} onChange={e=>setForm({...form,label:e.target.value})}/></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="label">Fecha</label><input className="input" type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/></div>
+          <div><label className="label">Tipo</label>
+            <select className="select" value={form.type} onChange={e=>setForm({...form,type:e.target.value})}>
+              {['Hito','Entrega','Revisión','Pago','Otro'].map(t=><option key={t}>{t}</option>)}
+            </select>
+          </div>
+        </div>
+        <div><label className="label">Estado</label>
+          <select className="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>
+            {['Pendiente','En curso','Completado','Bloqueado'].map(s=><option key={s}>{s}</option>)}
+          </select>
+        </div>
+        <div><label className="label">Notas</label><textarea className="textarea" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} placeholder="Descripción o comentarios..."/></div>
+      </div>
+      <div className="hairline-t mt-8 pt-5 flex items-center justify-between">
+        <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn btn-primary" onClick={handleCreate} disabled={loading}><I name="check" size={14}/>{loading?'Guardando...':'Agregar hito'}</button>
+      </div>
+    </SlideOver>
+  );
+}
+
+// ─── PROJECT DETAIL ──────────────────────────────────────────
+function ProjectDetail({ project, onBack, onRefresh }: { project:any; onBack:()=>void; onRefresh:()=>void }) {
+  const [tab, setTab] = useState<ProjectTab>('resumen');
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({...project});
+  const [loading, setLoading] = useState(false);
+  const [quotes, setQuotes] = useState<any[]>([]);
+  const [insumos, setInsumos] = useState<any[]>([]);
+  const [hitos, setHitos] = useState<any[]>([]);
+
+  useEffect(() => { setForm({...project}); setTab('resumen'); setEditing(false); }, [project.id]);
+
+  useEffect(() => {
+    async function load() {
+      const [{ data: q }, { data: i }, { data: h }] = await Promise.all([
+        supabase.from('cotizaciones').select('*').eq('project_id', project.id).order('created_at', { ascending: false }),
+        supabase.from('insumos').select('*').eq('project_id', project.id).order('created_at', { ascending: false }),
+        supabase.from('hitos').select('*').eq('project_id', project.id).order('date', { ascending: true }),
+      ]);
+      if (q) setQuotes(q);
+      if (i) setInsumos(i);
+      if (h) setHitos(h);
+    }
+    load();
+  }, [project.id]);
+
+  async function handleSave() {
+    setLoading(true);
+    const progress = Number(form.budget)>0?Math.round((Number(form.executed)/Number(form.budget))*100):0;
+    const health = progress>=100?'danger':progress>=80?'warn':'ok';
+    const { error } = await supabase.from('proyectos').update({ name:form.name, description:form.description, scope:form.scope, budget:Number(form.budget), executed:Number(form.executed), status:form.status, start_date:form.start_date, end_date:form.end_date, next_label:form.next_label, next_date:form.next_date, progress, health }).eq('id',project.id);
+    setLoading(false);
+    if (!error) { setEditing(false); onRefresh(); }
+    else alert('Error: '+error.message);
+  }
+
+  const progress = Number(form.budget)>0?Math.round((Number(form.executed)/Number(form.budget))*100):0;
+  const m = scopeMeta(project.scope);
+
+  const refreshQuotes  = async () => { const {data}=await supabase.from('cotizaciones').select('*').eq('project_id',project.id).order('created_at',{ascending:false}); if(data)setQuotes(data); };
+  const refreshInsumos = async () => { const {data}=await supabase.from('insumos').select('*').eq('project_id',project.id).order('created_at',{ascending:false}); if(data)setInsumos(data); };
+  const refreshHitos   = async () => { const {data}=await supabase.from('hitos').select('*').eq('project_id',project.id).order('date',{ascending:true}); if(data)setHitos(data); };
+
+  return (
+    <div className="p-4 md:p-8 space-y-5">
+      {/* Header */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button className="btn btn-ghost !h-8 !w-8 !p-0" onClick={onBack}><I name="arrow-left" size={16}/></button>
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <span className="rounded-md flex items-center justify-center flex-shrink-0" style={{ width:32,height:32,background:m.bg,border:`1px solid ${m.border}`,color:m.color }}><I name={m.icon} size={15}/></span>
+          <div className="min-w-0">
+            <div className="eyebrow mb-0.5">Detalle del proyecto</div>
+            <h1 className="font-bold text-[20px] md:text-[24px] truncate" style={{ fontFamily:'Sora' }}>{project.name}</h1>
+          </div>
+        </div>
+        <StatusPill status={project.status||'En curso'}/>
+        {tab==='resumen' && (editing
+          ? <><button className="btn btn-ghost" onClick={()=>{setEditing(false);setForm({...project});}}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={loading}><I name="check" size={14}/>{loading?'Guardando...':'Guardar'}</button></>
+          : <button className="btn" onClick={()=>setEditing(true)}><I name="pencil" size={14}/><span className="hidden md:inline">Editar</span></button>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex items-center gap-0.5 overflow-x-auto" style={{ borderBottom:'1px solid var(--line)' }}>
+        {PROJECT_TABS.map(t=>(
+          <button key={t.id} onClick={()=>{setTab(t.id);setEditing(false);}}
+            className="flex items-center gap-1.5 px-3 py-2.5 text-[12.5px] font-medium transition-all whitespace-nowrap"
+            style={{ color:tab===t.id?'var(--text-0)':'var(--text-2)',
+                     borderBottom:tab===t.id?'2px solid var(--jade)':'2px solid transparent',
+                     background:'transparent' }}>
+            <I name={t.icon} size={13}/>{t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      {tab==='resumen'      && <TabResumen project={project} form={form} setForm={setForm} editing={editing} progress={progress}/>}
+      {tab==='presupuesto'  && <TabPresupuesto project={project} onRefresh={onRefresh}/>}
+      {tab==='cotizaciones' && <TabCotizaciones quotes={quotes} project={project} onRefresh={refreshQuotes}/>}
+      {tab==='insumos'      && <TabInsumos insumos={insumos} project={project} onRefresh={refreshInsumos}/>}
+      {tab==='retornos'     && <TabRetornos project={project} onRefresh={onRefresh}/>}
+      {tab==='timeline'     && <TabTimeline hitos={hitos} project={project} onRefresh={refreshHitos}/>}
     </div>
   );
 }
@@ -545,9 +934,10 @@ function QuotesView({ projects }: { projects: any[] }) {
   );
 }
 
-function NewQuotePanel({ open, onClose, projects }: { open:boolean; onClose:()=>void; projects:any[] }) {
+function NewQuotePanel({ open, onClose, projects, defaultProjectId }: { open:boolean; onClose:()=>void; projects:any[]; defaultProjectId?:string }) {
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ ref:'', supplier:'', project_id:'', total:'', status:'Vigente', notes:'', expires:'' });
+  const [form, setForm] = useState({ ref:'', supplier:'', project_id: defaultProjectId||'', total:'', status:'Vigente', notes:'', expires:'' });
+  useEffect(() => { if (open) setForm(f=>({...f, project_id: defaultProjectId||''})); }, [open, defaultProjectId]);
   async function handleCreate() {
     if (!form.supplier.trim()) return;
     setLoading(true);
@@ -643,14 +1033,14 @@ function InputsView({ projects }: { projects: any[] }) {
   );
 }
 
-function NewInsumoPanel({ open, onClose, projects }: { open:boolean; onClose:()=>void; projects:any[] }) {
+function NewInsumoPanel({ open, onClose, projects, defaultProjectId }: { open:boolean; onClose:()=>void; projects:any[]; defaultProjectId?:string }) {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ name:'', category:'Material', unit:'', unit_price:'', supplier:'', note:'' });
   async function handleCreate() {
     if (!form.name.trim()) return;
     setLoading(true);
     const id = 'i'+Date.now();
-    const { error } = await supabase.from('insumos').insert([{ id, name:form.name, category:form.category, unit:form.unit, unit_price:Number(form.unit_price)||0, supplier:form.supplier, note:form.note }]);
+    const { error } = await supabase.from('insumos').insert([{ id, name:form.name, category:form.category, unit:form.unit, unit_price:Number(form.unit_price)||0, supplier:form.supplier, note:form.note, project_id: defaultProjectId||null }]);
     setLoading(false);
     if (!error) { setForm({ name:'', category:'Material', unit:'', unit_price:'', supplier:'', note:'' }); onClose(); }
     else alert('Error: '+error.message);
@@ -795,9 +1185,10 @@ function ReturnsView({ projects }: { projects: any[] }) {
   );
 }
 
-function NewEvalPanel({ open, onClose, projects, onSaved }: { open:boolean; onClose:()=>void; projects:any[]; onSaved:()=>void }) {
+function NewEvalPanel({ open, onClose, projects, onSaved, defaultProjectId }: { open:boolean; onClose:()=>void; projects:any[]; onSaved:()=>void; defaultProjectId?:string }) {
   const [loading, setLoading] = useState(false);
-  const [projectId, setProjectId] = useState('');
+  const [projectId, setProjectId] = useState(defaultProjectId||'');
+  useEffect(() => { if (open) setProjectId(defaultProjectId||''); }, [open, defaultProjectId]);
   const [scores, setScores] = useState<Record<string,number>>(Object.fromEntries(QUAL_DIMS.map(d=>[d,5])));
 
   async function handleSave() {
