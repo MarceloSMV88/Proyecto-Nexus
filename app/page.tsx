@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useMemo, useLayoutEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, Legend } from 'recharts';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
 const SCOPE_META: Record<string, { icon: string; color: string; bg: string; border: string }> = {
@@ -260,6 +260,41 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
           <div className="mt-1 text-[11px]" style={{ color:'var(--text-2)' }}>frente a presupuesto</div>
         </Card>
       </div>
+
+      {projects.length > 0 && (
+        <Card className="p-4 md:p-6">
+          <div className="eyebrow mb-1">Presupuesto vs Ejecución</div>
+          <div className="flex items-center gap-4 mb-4">
+            <h2 className="font-bold text-[16px] md:text-[18px]" style={{ fontFamily:'Sora' }}>Comparativa por proyecto</h2>
+            <div className="flex items-center gap-3 ml-auto">
+              {[{color:'rgba(77,158,255,0.5)',label:'Presupuesto'},{color:'#00D68F',label:'Ejecutado'}].map(l=>(
+                <span key={l.label} className="flex items-center gap-1.5 text-[11px]" style={{ color:'var(--text-2)' }}>
+                  <span className="inline-block w-3 h-2.5 rounded-sm" style={{ background:l.color }}/>
+                  {l.label}
+                </span>
+              ))}
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={projects.map(p=>({ name: p.name.length>13?p.name.slice(0,13)+'…':p.name, Presupuesto: p.budget||0, Ejecutado: p.executed||0, _health: p.health }))} margin={{ top:4, right:8, left:0, bottom:4 }} barCategoryGap="28%">
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false}/>
+              <XAxis dataKey="name" tick={{ fill:'var(--text-2)', fontSize:11 }} axisLine={false} tickLine={false}/>
+              <YAxis tick={{ fill:'var(--text-2)', fontSize:10 }} axisLine={false} tickLine={false} tickFormatter={n=>fmtShort(n)} width={52}/>
+              <Tooltip
+                contentStyle={{ background:'#0F0F18', border:'1px solid var(--line-strong)', borderRadius:10, fontSize:12, padding:'8px 12px' }}
+                formatter={(v:any) => [fmtCLP(Number(v)), undefined]}
+                labelStyle={{ color:'var(--text-1)', fontWeight:600, marginBottom:4 }}
+                cursor={{ fill:'rgba(255,255,255,0.03)' }}/>
+              <Bar dataKey="Presupuesto" fill="rgba(77,158,255,0.25)" radius={[3,3,0,0]} maxBarSize={32}/>
+              <Bar dataKey="Ejecutado" radius={[3,3,0,0]} maxBarSize={32}>
+                {projects.map((p:any,i:number)=>(
+                  <Cell key={i} fill={p.health==='danger'?'#FF4D6D':p.health==='warn'?'#F5A623':'#00D68F'}/>
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
 
       <div>
         <div className="flex items-end justify-between mb-4">
@@ -545,8 +580,9 @@ function TabCotizaciones({ quotes, project, onRefresh }: { quotes:any[]; project
   async function handleAdjudicar(q:any) {
     const hasItems = Array.isArray(q.items)&&q.items.filter((i:any)=>i.name).length>0;
     if (!confirm(`¿Adjudicar ${q.ref||q.id} de ${q.supplier}?${hasItems?' Los ítems se guardarán como insumos.':''}`)) return;
-    const { error } = await adjudicarCotizacion(q);
+    const { error, insumosCreados } = await adjudicarCotizacion(q);
     if (error) { alert('Error: '+error.message); return; }
+    if (insumosCreados > 0) alert(`Cotización adjudicada. ${insumosCreados} insumo${insumosCreados!==1?'s':''} creados en el catálogo.`);
     onRefresh();
   }
 
@@ -632,18 +668,27 @@ function TabCotizaciones({ quotes, project, onRefresh }: { quotes:any[]; project
 }
 
 function TabInsumos({ insumos, project, onRefresh }: { insumos:any[]; project:any; onRefresh:()=>void }) {
-  const [newOpen, setNewOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editInsumo, setEditInsumo] = useState<any>(null);
   const totalCost = insumos.reduce((a,i)=>a+((i.unit_price||0)*(i.quantity||1)),0);
+
+  async function handleDelete(i:any) {
+    if (!confirm(`¿Eliminar "${i.name}"?`)) return;
+    const { error } = await supabase.from('insumos').delete().eq('id',i.id);
+    if (error) { alert('Error: '+error.message); return; }
+    onRefresh();
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">Costo total insumos</div><div className="font-mono font-semibold text-[18px] mt-1">{fmtCLP(totalCost)}</div></Card>
-        <button className="btn btn-primary" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nuevo insumo</button>
+        <button className="btn btn-primary" onClick={()=>{setEditInsumo(null);setFormOpen(true);}}><I name="plus" size={14}/>Nuevo insumo</button>
       </div>
       <div className="overflow-x-auto">
         <Card className="overflow-hidden" style={{ minWidth:520 }}>
           <table className="tbl">
-            <thead><tr><th>Insumo</th><th style={{width:120}}>Categoría</th><th style={{width:80}}>Cant.</th><th style={{width:100}}>Unidad</th><th style={{width:140}}>P. unitario</th><th style={{width:140}}>Subtotal</th><th style={{width:40}}></th></tr></thead>
+            <thead><tr><th>Insumo</th><th style={{width:120}}>Categoría</th><th style={{width:70}}>Cant.</th><th style={{width:90}}>Unidad</th><th style={{width:130}}>P. unitario</th><th style={{width:130}}>Subtotal</th><th style={{width:80}}/></tr></thead>
             <tbody>
               {insumos.map(i=>{
                 const catMeta = CAT_META[i.category]||CAT_META['Otro'];
@@ -656,7 +701,12 @@ function TabInsumos({ insumos, project, onRefresh }: { insumos:any[]; project:an
                     <td className="font-mono text-[12px]">{i.unit||'—'}</td>
                     <td className="font-mono">{fmtCLP(i.unit_price||0)}</td>
                     <td className="font-mono font-medium">{fmtCLP(subtotal)}</td>
-                    <td><button className="btn btn-ghost !w-8 !p-0"><I name="more-horizontal" size={14}/></button></td>
+                    <td>
+                      <div className="flex items-center gap-1">
+                        <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Editar" onClick={()=>{setEditInsumo(i);setFormOpen(true);}}><I name="pencil" size={13}/></button>
+                        <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Eliminar" onClick={()=>handleDelete(i)}><I name="trash-2" size={13} color="#FF4D6D"/></button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -666,12 +716,12 @@ function TabInsumos({ insumos, project, onRefresh }: { insumos:any[]; project:an
             <div className="p-12 text-center" style={{color:'var(--text-2)'}}>
               <I name="package" size={32} className="mx-auto mb-3 opacity-40"/>
               <p className="mb-4">Sin insumos para este proyecto.</p>
-              <button className="btn btn-primary mx-auto" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nuevo insumo</button>
+              <button className="btn btn-primary mx-auto" onClick={()=>{setEditInsumo(null);setFormOpen(true);}}><I name="plus" size={14}/>Nuevo insumo</button>
             </div>
           )}
         </Card>
       </div>
-      <NewInsumoPanel open={newOpen} onClose={()=>{setNewOpen(false);onRefresh();}} projects={[project]} defaultProjectId={project.id}/>
+      <InsumoFormPanel open={formOpen} onClose={()=>{setFormOpen(false);onRefresh();}} projects={[project]} defaultProjectId={project.id} insumo={editInsumo||undefined}/>
     </div>
   );
 }
@@ -928,15 +978,16 @@ function ProjectDetail({ project, onBack, onRefresh }: { project:any; onBack:()=
 }
 
 // ─── QUOTE HELPERS ───────────────────────────────────────────
-async function adjudicarCotizacion(quote: any) {
+async function adjudicarCotizacion(quote: any): Promise<{ error: any; insumosCreados: number }> {
   const { error: e1 } = await supabase.from('cotizaciones').update({ status:'Adjudicada' }).eq('id', quote.id);
-  if (e1) return { error: e1 };
-  const items: any[] = Array.isArray(quote.items) ? quote.items.filter((i:any)=>i.name) : [];
+  if (e1) return { error: e1, insumosCreados: 0 };
+  const items: any[] = Array.isArray(quote.items) ? quote.items.filter((i:any)=>i.name?.trim()) : [];
   if (items.length > 0) {
+    const base = Date.now();
     const rows = items.map((item:any, idx:number) => ({
-      id: 'i'+Date.now()+idx,
+      id: 'i'+base+'_'+idx,
       name: item.name,
-      category: 'Material',
+      category: item.category||'Material',
       unit: item.unit||'',
       unit_price: Number(item.unit_price)||0,
       quantity: Number(item.qty)||1,
@@ -945,9 +996,10 @@ async function adjudicarCotizacion(quote: any) {
       note: `Cotización ${quote.ref||quote.id}`,
     }));
     const { error: e2 } = await supabase.from('insumos').insert(rows);
-    if (e2) return { error: e2 };
+    if (e2) return { error: e2, insumosCreados: 0 };
+    return { error: null, insumosCreados: items.length };
   }
-  return { error: null };
+  return { error: null, insumosCreados: 0 };
 }
 
 // ─── QUOTE FORM PANEL ────────────────────────────────────────
@@ -1125,6 +1177,7 @@ function QuotesView({ projects }: { projects: any[] }) {
   const [compareMode, setCompareMode] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [comparativoOpen, setComparativoOpen] = useState(false);
+  const [filterProjectId, setFilterProjectId] = useState('');
 
   async function fetchQuotes() {
     const { data } = await supabase.from('cotizaciones').select('*').order('created_at', { ascending: false });
@@ -1138,8 +1191,9 @@ function QuotesView({ projects }: { projects: any[] }) {
   async function handleAdjudicar(q:any) {
     const hasItems = Array.isArray(q.items)&&q.items.filter((i:any)=>i.name).length>0;
     if (!confirm(`¿Adjudicar ${q.ref||q.id} de ${q.supplier}?${hasItems?' Los ítems se guardarán como insumos.':''}`)) return;
-    const { error } = await adjudicarCotizacion(q);
+    const { error, insumosCreados } = await adjudicarCotizacion(q);
     if (error) { alert('Error: '+error.message); return; }
+    if (insumosCreados > 0) alert(`Cotización adjudicada. ${insumosCreados} insumo${insumosCreados!==1?'s':''} creados en el catálogo.`);
     fetchQuotes();
   }
 
@@ -1150,7 +1204,8 @@ function QuotesView({ projects }: { projects: any[] }) {
     fetchQuotes();
   }
 
-  const selectedQuotes = quotes.filter(q=>selected.includes(q.id));
+  const visibleQuotes = filterProjectId ? quotes.filter(q => q.project_id === filterProjectId) : quotes;
+  const selectedQuotes = visibleQuotes.filter(q=>selected.includes(q.id));
   const getProject = (pid:string) => projects.find(p=>p.id===pid);
 
   return (
@@ -1158,6 +1213,10 @@ function QuotesView({ projects }: { projects: any[] }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily:'Sora' }}>Cotizaciones</h2><p className="text-[12px] mt-0.5" style={{ color:'var(--text-2)' }}>Gestiona y compara cotizaciones de proveedores</p></div>
         <div className="flex items-center gap-2">
+          <select className="select !h-9 !text-[12px]" style={{ minWidth:160 }} value={filterProjectId} onChange={e=>{setFilterProjectId(e.target.value);setSelected([]);}}>
+            <option value="">Todos los proyectos</option>
+            {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
           <button className={`btn${compareMode?' btn-primary':''}`} onClick={()=>{setCompareMode(!compareMode);setSelected([]);}}><I name="columns-3" size={14}/>{compareMode?'Cancelar':'Comparar'}</button>
           <button className="btn btn-primary" onClick={()=>{setEditQuote(null);setFormOpen(true);}}><I name="plus" size={14}/>Nueva cotización</button>
         </div>
@@ -1182,7 +1241,7 @@ function QuotesView({ projects }: { projects: any[] }) {
                 <th style={{width:100}}>Vence</th><th style={{width:120}}>Estado</th><th style={{width:108}}/>
               </tr></thead>
               <tbody>
-                {quotes.map(q=>{
+                {visibleQuotes.map(q=>{
                   const proj = getProject(q.project_id);
                   const isSel = selected.includes(q.id);
                   return (
@@ -1210,10 +1269,10 @@ function QuotesView({ projects }: { projects: any[] }) {
                 })}
               </tbody>
             </table>
-            {quotes.length===0 && (
+            {visibleQuotes.length===0 && (
               <div className="p-12 text-center" style={{ color:'var(--text-2)' }}>
                 <I name="file-text" size={32} className="mx-auto mb-3 opacity-40"/>
-                <p className="mb-4">No hay cotizaciones aún.</p>
+                <p className="mb-4">{filterProjectId ? 'No hay cotizaciones para este proyecto.' : 'No hay cotizaciones aún.'}</p>
                 <button className="btn btn-primary mx-auto" onClick={()=>{setEditQuote(null);setFormOpen(true);}}><I name="plus" size={14}/>Nueva cotización</button>
               </div>
             )}
@@ -1228,79 +1287,35 @@ function QuotesView({ projects }: { projects: any[] }) {
   );
 }
 
-// ─── INPUTS VIEW ─────────────────────────────────────────────
-function InputsView({ projects }: { projects: any[] }) {
-  const [insumos, setInsumos] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [newOpen, setNewOpen] = useState(false);
-
-  async function fetchInsumos() {
-    const { data } = await supabase.from('insumos').select('*').order('created_at', { ascending: false });
-    if (data) setInsumos(data);
-    setLoading(false);
-  }
-
-  useEffect(() => { fetchInsumos(); }, []);
-
-  return (
-    <div className="p-4 md:p-8 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily:'Sora' }}>Catálogo de insumos</h2><p className="text-[12px] mt-0.5" style={{ color:'var(--text-2)' }}>Materiales, servicios y recursos de tus proyectos</p></div>
-        <button className="btn btn-primary" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nuevo insumo</button>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-12" style={{ color:'var(--text-2)' }}>Cargando...</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <Card className="overflow-hidden" style={{ minWidth:600 }}>
-            <table className="tbl">
-              <thead><tr><th>Insumo</th><th style={{width:120}}>Categoría</th><th style={{width:100}}>Unidad</th><th style={{width:140}}>Precio unitario</th><th>Proveedor</th><th style={{width:40}}></th></tr></thead>
-              <tbody>
-                {insumos.map(i => {
-                  const catMeta = CAT_META[i.category] || CAT_META['Otro'];
-                  return (
-                    <tr key={i.id}>
-                      <td><div className="font-medium">{i.name}</div>{i.note && <div className="text-[10.5px]" style={{ color:'var(--text-3)' }}>{i.note}</div>}</td>
-                      <td><span className={'pill '+(catMeta.cls||'')}>{i.category||'Otro'}</span></td>
-                      <td className="font-mono text-[12px]">{i.unit||'—'}</td>
-                      <td className="font-mono">{fmtCLP(i.unit_price||0)}</td>
-                      <td style={{ color:'var(--text-1)' }}>{i.supplier||'—'}</td>
-                      <td><button className="btn btn-ghost !w-8 !p-0"><I name="more-horizontal" size={14}/></button></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {insumos.length===0 && (
-              <div className="p-12 text-center" style={{ color:'var(--text-2)' }}>
-                <I name="package" size={32} className="mx-auto mb-3 opacity-40"/>
-                <p className="mb-4">No hay insumos registrados.</p>
-                <button className="btn btn-primary mx-auto" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nuevo insumo</button>
-              </div>
-            )}
-          </Card>
-        </div>
-      )}
-      <NewInsumoPanel open={newOpen} onClose={()=>{ setNewOpen(false); fetchInsumos(); }} projects={projects}/>
-    </div>
-  );
-}
-
-function NewInsumoPanel({ open, onClose, projects, defaultProjectId }: { open:boolean; onClose:()=>void; projects:any[]; defaultProjectId?:string }) {
+// ─── INSUMO FORM PANEL ───────────────────────────────────────
+function InsumoFormPanel({ open, onClose, projects, defaultProjectId, insumo }: { open:boolean; onClose:()=>void; projects:any[]; defaultProjectId?:string; insumo?:any }) {
+  const isEdit = !!insumo;
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ name:'', category:'Material', unit:'', unit_price:'', supplier:'', note:'' });
-  async function handleCreate() {
+  const [form, setForm] = useState({ name:'', category:'Material', unit:'', unit_price:'', quantity:'1', supplier:'', note:'' });
+
+  useEffect(() => {
+    if (!open) return;
+    if (insumo) {
+      setForm({ name:insumo.name||'', category:insumo.category||'Material', unit:insumo.unit||'', unit_price:String(insumo.unit_price||''), quantity:String(insumo.quantity||1), supplier:insumo.supplier||'', note:insumo.note||'' });
+    } else {
+      setForm({ name:'', category:'Material', unit:'', unit_price:'', quantity:'1', supplier:'', note:'' });
+    }
+  }, [open, insumo?.id]);
+
+  async function handleSave() {
     if (!form.name.trim()) return;
     setLoading(true);
-    const id = 'i'+Date.now();
-    const { error } = await supabase.from('insumos').insert([{ id, name:form.name, category:form.category, unit:form.unit, unit_price:Number(form.unit_price)||0, supplier:form.supplier, note:form.note, project_id: defaultProjectId||null }]);
+    const payload = { name:form.name, category:form.category, unit:form.unit, unit_price:Number(form.unit_price)||0, quantity:Number(form.quantity)||1, supplier:form.supplier, note:form.note, project_id: defaultProjectId||null };
+    const { error } = isEdit
+      ? await supabase.from('insumos').update(payload).eq('id', insumo.id)
+      : await supabase.from('insumos').insert([{ id:'i'+Date.now(), ...payload }]);
     setLoading(false);
-    if (!error) { setForm({ name:'', category:'Material', unit:'', unit_price:'', supplier:'', note:'' }); onClose(); }
+    if (!error) onClose();
     else alert('Error: '+error.message);
   }
+
   return (
-    <SlideOver open={open} onClose={onClose} subtitle="Nuevo insumo" title="Registrar insumo">
+    <SlideOver open={open} onClose={onClose} subtitle={isEdit?'Editar insumo':'Nuevo insumo'} title={isEdit?(form.name||'Editar'):'Registrar insumo'}>
       <div className="space-y-5">
         <div><label className="label">Nombre *</label><input className="input" placeholder="Ej. Cemento 25kg, Mano de obra..." value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></div>
         <div><label className="label">Categoría</label>
@@ -1310,18 +1325,108 @@ function NewInsumoPanel({ open, onClose, projects, defaultProjectId }: { open:bo
             ))}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div><label className="label">Unidad</label><input className="input" placeholder="m², kg, hr, gl..." value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}/></div>
-          <div><label className="label">Precio unitario (CLP)</label><input className="input" type="number" placeholder="0" value={form.unit_price} onChange={e=>setForm({...form,unit_price:e.target.value})}/></div>
+        <div className="grid grid-cols-3 gap-3">
+          <div><label className="label">Cantidad</label><input className="input" type="number" min="0" placeholder="1" value={form.quantity} onChange={e=>setForm({...form,quantity:e.target.value})}/></div>
+          <div><label className="label">Unidad</label><input className="input" placeholder="m², kg…" value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}/></div>
+          <div><label className="label">P. unitario (CLP)</label><input className="input" type="number" placeholder="0" value={form.unit_price} onChange={e=>setForm({...form,unit_price:e.target.value})}/></div>
         </div>
+        {Number(form.quantity)>0 && Number(form.unit_price)>0 && (
+          <div className="flex justify-between items-center px-3 py-2 rounded-lg" style={{ background:'rgba(0,214,143,0.06)', border:'1px solid rgba(0,214,143,0.2)' }}>
+            <span className="text-[12px]" style={{ color:'var(--text-2)' }}>Subtotal</span>
+            <span className="font-mono font-semibold text-[14px]" style={{ color:'var(--jade)' }}>{fmtCLP(Number(form.quantity)*Number(form.unit_price))}</span>
+          </div>
+        )}
         <div><label className="label">Proveedor</label><input className="input" placeholder="Nombre del proveedor" value={form.supplier} onChange={e=>setForm({...form,supplier:e.target.value})}/></div>
         <div><label className="label">Nota</label><input className="input" placeholder="Descripción corta" value={form.note} onChange={e=>setForm({...form,note:e.target.value})}/></div>
       </div>
       <div className="hairline-t mt-8 pt-5 flex items-center justify-between">
         <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn btn-primary" onClick={handleCreate} disabled={loading}><I name="check" size={14}/>{loading?'Guardando...':'Guardar insumo'}</button>
+        <button className="btn btn-primary" onClick={handleSave} disabled={loading}><I name="check" size={14}/>{loading?'Guardando...':(isEdit?'Guardar cambios':'Guardar insumo')}</button>
       </div>
     </SlideOver>
+  );
+}
+
+// ─── INPUTS VIEW ─────────────────────────────────────────────
+function InputsView({ projects }: { projects: any[] }) {
+  const [insumos, setInsumos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editInsumo, setEditInsumo] = useState<any>(null);
+  const [filterProjectId, setFilterProjectId] = useState('');
+
+  async function fetchInsumos() {
+    const { data } = await supabase.from('insumos').select('*').order('created_at', { ascending: false });
+    if (data) setInsumos(data);
+    setLoading(false);
+  }
+  useEffect(() => { fetchInsumos(); }, []);
+
+  async function handleDelete(i:any) {
+    if (!confirm(`¿Eliminar "${i.name}"?`)) return;
+    const { error } = await supabase.from('insumos').delete().eq('id',i.id);
+    if (error) { alert('Error: '+error.message); return; }
+    fetchInsumos();
+  }
+
+  const visibleInsumos = filterProjectId ? insumos.filter(i => i.project_id === filterProjectId) : insumos;
+  const getProject = (pid:string) => projects.find(p=>p.id===pid);
+
+  return (
+    <div className="p-4 md:p-8 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily:'Sora' }}>Catálogo de insumos</h2><p className="text-[12px] mt-0.5" style={{ color:'var(--text-2)' }}>Materiales, servicios y recursos de tus proyectos</p></div>
+        <div className="flex items-center gap-2">
+          <select className="select !h-9 !text-[12px]" style={{ minWidth:160 }} value={filterProjectId} onChange={e=>setFilterProjectId(e.target.value)}>
+            <option value="">Todos los proyectos</option>
+            {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button className="btn btn-primary" onClick={()=>{setEditInsumo(null);setFormOpen(true);}}><I name="plus" size={14}/>Nuevo insumo</button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-12" style={{ color:'var(--text-2)' }}>Cargando...</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <Card className="overflow-hidden" style={{ minWidth:620 }}>
+            <table className="tbl">
+              <thead><tr><th>Insumo</th><th style={{width:120}}>Categoría</th><th style={{width:80}}>Cant.</th><th style={{width:100}}>Unidad</th><th style={{width:140}}>P. unitario</th><th>Proyecto</th><th style={{width:80}}/></tr></thead>
+              <tbody>
+                {visibleInsumos.map(i => {
+                  const catMeta = CAT_META[i.category] || CAT_META['Otro'];
+                  const proj = getProject(i.project_id);
+                  return (
+                    <tr key={i.id}>
+                      <td><div className="font-medium">{i.name}</div>{i.note && <div className="text-[10.5px]" style={{ color:'var(--text-3)' }}>{i.note}</div>}</td>
+                      <td><span className={'pill '+(catMeta.cls||'')}>{i.category||'Otro'}</span></td>
+                      <td className="font-mono text-[12px]">{i.quantity||1}</td>
+                      <td className="font-mono text-[12px]">{i.unit||'—'}</td>
+                      <td className="font-mono">{fmtCLP(i.unit_price||0)}</td>
+                      <td className="text-[12px]" style={{ color:'var(--text-1)' }}>{proj?.name||'—'}</td>
+                      <td>
+                        <div className="flex items-center gap-1">
+                          <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Editar" onClick={()=>{setEditInsumo(i);setFormOpen(true);}}><I name="pencil" size={13}/></button>
+                          <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Eliminar" onClick={()=>handleDelete(i)}><I name="trash-2" size={13} color="#FF4D6D"/></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {visibleInsumos.length===0 && (
+              <div className="p-12 text-center" style={{ color:'var(--text-2)' }}>
+                <I name="package" size={32} className="mx-auto mb-3 opacity-40"/>
+                <p className="mb-4">{filterProjectId ? 'No hay insumos para este proyecto.' : 'No hay insumos registrados.'}</p>
+                <button className="btn btn-primary mx-auto" onClick={()=>{setEditInsumo(null);setFormOpen(true);}}><I name="plus" size={14}/>Nuevo insumo</button>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+      <InsumoFormPanel open={formOpen} onClose={()=>{setFormOpen(false);fetchInsumos();}} projects={projects} insumo={editInsumo||undefined}/>
+    </div>
   );
 }
 
@@ -1353,7 +1458,13 @@ function ReturnsView({ projects }: { projects: any[] }) {
 
       {/* Project selector */}
       <Card className="p-4" strong>
-        <div className="eyebrow mb-3">Selecciona proyectos a comparar</div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="eyebrow">Selecciona proyectos a comparar</div>
+          <div className="flex items-center gap-2">
+            <button className="btn btn-ghost !h-7 text-[11px]" onClick={()=>setSelected(projects.map(p=>p.id))}><I name="check-square" size={12}/>Todos</button>
+            {selected.length>0 && <button className="btn btn-ghost !h-7 text-[11px]" onClick={()=>setSelected([])}><I name="x" size={12}/>Limpiar</button>}
+          </div>
+        </div>
         <div className="flex flex-wrap gap-2">
           {projects.map(p => {
             const m = scopeMeta(p.scope);
