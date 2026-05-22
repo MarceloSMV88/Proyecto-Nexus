@@ -799,9 +799,25 @@ function TabPresupuesto({ project, onRefresh }: { project:any; onRefresh:()=>voi
   const [editing, setEditing] = useState(false);
   const [vals, setVals] = useState({ budget: Number(project.budget)||0, executed: Number(project.executed)||0 });
   const [loading, setLoading] = useState(false);
+  const [insumosTotal, setInsumosTotal] = useState<number|null>(null);
+
   useEffect(() => { setVals({ budget: Number(project.budget)||0, executed: Number(project.executed)||0 }); }, [project.budget, project.executed]);
+
+  useEffect(() => {
+    supabase.from('insumos').select('unit_price,quantity').eq('project_id', project.id).then(({ data }) => {
+      if (data) setInsumosTotal(data.reduce((s,i) => s + (Number(i.unit_price)||0)*(Number(i.quantity)||1), 0));
+    });
+  }, [project.id]);
+
   const progress = vals.budget > 0 ? Math.round((vals.executed / vals.budget) * 100) : 0;
   const remaining = vals.budget - vals.executed;
+
+  function syncFromInsumos() {
+    if (insumosTotal === null) return;
+    setVals(v => ({ ...v, executed: insumosTotal }));
+    setEditing(true);
+  }
+
   async function handleSave() {
     setLoading(true);
     const prog = vals.budget>0?Math.round((vals.executed/vals.budget)*100):0;
@@ -836,6 +852,23 @@ function TabPresupuesto({ project, onRefresh }: { project:any; onRefresh:()=>voi
           <span>de {fmtCLP(vals.budget)}</span>
         </div>
       </Card>
+      {/* Insumos sync indicator */}
+      {insumosTotal !== null && insumosTotal !== vals.executed && (
+        <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background:'rgba(77,158,255,0.06)', border:'1px solid rgba(77,158,255,0.2)' }}>
+          <div className="flex items-center gap-2">
+            <I name="package" size={14} color="#4D9EFF"/>
+            <span className="text-[12px]" style={{ color:'var(--text-2)' }}>Total desde insumos:</span>
+            <span className="font-mono font-semibold text-[13px]" style={{ color:'#4D9EFF' }}>{fmtCLP(insumosTotal)}</span>
+          </div>
+          <button className="btn btn-ghost !h-7 !text-[11.5px]" onClick={syncFromInsumos}><I name="refresh-cw" size={12}/>Sincronizar</button>
+        </div>
+      )}
+      {insumosTotal !== null && insumosTotal > 0 && insumosTotal === vals.executed && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl" style={{ background:'rgba(0,214,143,0.06)', border:'1px solid rgba(0,214,143,0.15)' }}>
+          <I name="check-circle" size={13} color="#00D68F"/>
+          <span className="text-[12px]" style={{ color:'var(--jade)' }}>Ejecutado sincronizado con la suma de insumos</span>
+        </div>
+      )}
       <Card className="p-4 md:p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="eyebrow">Actualizar montos</div>
@@ -1227,7 +1260,7 @@ function ProjectDetail({ project, onBack, onRefresh }: { project:any; onBack:()=
   const refreshHitos   = async () => { const {data}=await supabase.from('hitos').select('*').eq('project_id',project.id).order('date',{ascending:true}); if(data)setHitos(data); };
 
   return (
-    <div className="p-4 md:p-8 space-y-5">
+    <div className="p-4 md:p-8 space-y-5 max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3">
         <button className="btn btn-ghost !h-8 !w-8 !p-0" onClick={onBack}><I name="arrow-left" size={16}/></button>
@@ -1961,163 +1994,397 @@ function InputsView({ projects, searchText = '' }: { projects: any[]; searchText
 }
 
 // ─── RETURNS VIEW ────────────────────────────────────────────
-function ReturnsView({ projects }: { projects: any[] }) {
+function ReturnsView({ projects, onRefresh }: { projects: any[]; onRefresh: () => void }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [evalOpen, setEvalOpen] = useState(false);
-  const [evals, setEvals] = useState<Record<string, any[]>>({});
 
-  // Build radar data from projects with qualitative data
-  const scopedProjects = projects.filter(p => selected.includes(p.id) && p.qualitative);
+  const COLORS = ['#00D68F', '#4D9EFF', '#F5A623', '#A88CFF'];
+  const noProjects = selected.length === 0;
+  const scopedProjects = projects.filter(p => selected.includes(p.id));
+
   const radarData = QUAL_DIMS.map(dim => {
-    const row: any = { dim: dim.slice(0,8) };
+    const row: any = { dim: dim.slice(0, 8) };
     scopedProjects.forEach(p => {
-      const found = (p.qualitative||[]).find((d:any)=>d.dim===dim||d.dim.startsWith(dim.slice(0,6)));
+      const found = (p.qualitative || []).find((d: any) => d.dim === dim || d.dim.startsWith(dim.slice(0, 6)));
       row[p.id] = found ? found.score : 0;
     });
     return row;
   });
 
-  const COLORS = ['#00D68F','#4D9EFF','#F5A623','#A88CFF'];
+  const ranking = scopedProjects
+    .filter(p => (p.qualitative || []).length > 0)
+    .map(p => ({ ...p, avg: p.qualitative.reduce((a: number, d: any) => a + d.score, 0) / p.qualitative.length }))
+    .sort((a, b) => b.avg - a.avg);
+
+  const avgQual = ranking.length > 0 ? ranking.reduce((s, p) => s + p.avg, 0) / ranking.length : null;
+  const projectsWithRoi = scopedProjects.filter(p => p.roi != null);
+  const avgRoi = projectsWithRoi.length > 0 ? projectsWithRoi.reduce((s, p) => s + p.roi, 0) / projectsWithRoi.length : null;
+
+  const bestDim = (() => {
+    const dimScores: Record<string, number[]> = {};
+    scopedProjects.forEach(p => (p.qualitative || []).forEach((d: any) => { if (!dimScores[d.dim]) dimScores[d.dim] = []; dimScores[d.dim].push(d.score); }));
+    const avgs = Object.entries(dimScores).map(([dim, sc]) => ({ dim, avg: sc.reduce((a, s) => a + s, 0) / sc.length }));
+    return avgs.sort((a, b) => b.avg - a.avg)[0] || null;
+  })();
+
+  const finChartData = scopedProjects.map(p => ({
+    name: p.name.length > 14 ? p.name.slice(0, 14) + '…' : p.name,
+    Presupuesto: Number(p.budget) || 0,
+    Ejecutado: Number(p.executed) || 0,
+  }));
+  const roiChartData = projectsWithRoi.map(p => ({
+    name: p.name.length > 14 ? p.name.slice(0, 14) + '…' : p.name,
+    roi: p.roi,
+  }));
 
   return (
     <div className="p-4 md:p-8 space-y-6">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily:'Sora' }}>Retornos</h2><p className="text-[12px] mt-0.5" style={{ color:'var(--text-2)' }}>Mide retornos cualitativos y financieros de tus proyectos</p></div>
-        <button className="btn btn-primary" onClick={()=>setEvalOpen(true)}><I name="plus" size={14}/>Nueva evaluación</button>
+        <div>
+          <h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily: 'Sora' }}>Retornos</h2>
+          <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-2)' }}>Mide y compara retornos cualitativos y financieros de tus proyectos</p>
+        </div>
+        <button className="btn btn-primary" disabled={noProjects} onClick={() => setEvalOpen(true)} style={{ opacity: noProjects ? 0.5 : 1 }}>
+          <I name="plus" size={14}/>Nueva evaluación
+        </button>
       </div>
 
       {/* Project selector */}
       <Card className="p-4" strong>
-        <div className="flex items-center justify-between mb-3">
-          <div className="eyebrow">Selecciona proyectos a comparar</div>
-          <div className="flex items-center gap-2">
-            <button className="btn btn-ghost !h-7 text-[11px]" onClick={()=>setSelected(projects.map(p=>p.id))}><I name="check-square" size={12}/>Todos</button>
-            {selected.length>0 && <button className="btn btn-ghost !h-7 text-[11px]" onClick={()=>setSelected([])}><I name="x" size={12}/>Limpiar</button>}
+        <div className="flex items-start gap-4">
+          <div className="rounded-lg flex items-center justify-center flex-shrink-0" style={{ width: 38, height: 38, background: 'rgba(168,140,255,0.10)', border: '1px solid rgba(168,140,255,0.30)', color: '#A88CFF' }}>
+            <I name="heart" size={17}/>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="font-semibold text-[13.5px]">Proyectos a evaluar</span>
+              {selected.length > 0
+                ? <span className="pill" style={{ background: 'rgba(168,140,255,0.10)', borderColor: 'rgba(168,140,255,0.30)', color: '#A88CFF' }}><I name="check" size={10}/>{selected.length} {selected.length === 1 ? 'proyecto' : 'proyectos'}</span>
+                : <span className="pill pill-amber"><I name="alert-circle" size={10}/>selecciona al menos uno</span>
+              }
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {selected.length === 0
+                ? <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>Filtra por uno o más proyectos para ver y crear evaluaciones.</span>
+                : scopedProjects.map(p => {
+                    const m = scopeMeta(p.scope);
+                    return (
+                      <span key={p.id} className="pill !text-[11.5px] gap-1.5 cursor-pointer" style={{ background: m.bg, borderColor: m.border, color: m.color }} onClick={() => setSelected(s => s.filter(x => x !== p.id))}>
+                        <I name={m.icon} size={11}/>{p.name}<I name="x" size={10} className="opacity-60"/>
+                      </span>
+                    );
+                  })
+              }
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {selected.length < projects.length && <button className="btn !h-8 !text-[11.5px]" onClick={() => setSelected(projects.map(p => p.id))}><I name="check-square" size={11}/>Todos</button>}
+            {selected.length > 0 && <button className="btn btn-ghost !h-8 !text-[11.5px]" onClick={() => setSelected([])}><I name="x" size={11}/>Limpiar</button>}
+            <button className="btn btn-primary !h-8 !text-[12px]" onClick={() => setPickerOpen(o => !o)}><I name={pickerOpen ? 'chevron-up' : 'plus'} size={12}/>{pickerOpen ? 'Cerrar' : 'Elegir'}</button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {projects.map(p => {
-            const m = scopeMeta(p.scope);
-            const isSel = selected.includes(p.id);
-            return (
-              <button key={p.id} onClick={()=>setSelected(s=>isSel?s.filter(x=>x!==p.id):[...s,p.id])} className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all" style={{ background:isSel?m.bg:'rgba(255,255,255,0.02)', border:`1px solid ${isSel?m.border:'var(--line)'}`, color:isSel?m.color:'var(--text-1)' }}>
-                <I name={m.icon} size={13}/><span className="text-[12px] font-medium">{p.name}</span>
-                {isSel && <I name="check" size={11}/>}
-              </button>
-            );
-          })}
-        </div>
-      </Card>
-
-      {selected.length === 0 ? (
-        <Card className="p-12 text-center"><I name="sparkles" size={32} className="mx-auto mb-3 opacity-40"/><p style={{ color:'var(--text-2)' }}>Selecciona al menos un proyecto para ver sus retornos.</p></Card>
-      ) : (
-        <>
-          {/* KPIs */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
-            {scopedProjects.map((p,i) => {
-              const qual = p.qualitative||[];
-              const avg = qual.length ? qual.reduce((a:number,d:any)=>a+d.score,0)/qual.length : 0;
+        {pickerOpen && (
+          <div className="hairline-t mt-4 pt-4 grid grid-cols-2 md:grid-cols-3 gap-2">
+            {projects.map(p => {
+              const isSel = selected.includes(p.id);
+              const m = scopeMeta(p.scope);
               return (
-                <Card key={p.id} className="p-4 md:p-5">
-                  <div className="eyebrow mb-2 truncate">{p.name}</div>
-                  <div className="font-mono font-semibold text-[24px]" style={{ color:COLORS[i%COLORS.length] }}>{avg>0?avg.toFixed(1):'—'}<span className="text-[14px] opacity-60">/10</span></div>
-                  <div className="text-[11px] mt-1" style={{ color:'var(--text-2)' }}>índice cualitativo</div>
-                  {p.roi && <div className="mt-2 font-mono text-[13px]" style={{ color:'#6FFFCB' }}>ROI: +{p.roi}%</div>}
-                </Card>
+                <button key={p.id} onClick={() => setSelected(s => isSel ? s.filter(x => x !== p.id) : [...s, p.id])}
+                  className="flex items-center gap-3 p-3 rounded-xl text-left transition-all"
+                  style={{ background: isSel ? 'rgba(168,140,255,0.08)' : 'rgba(255,255,255,0.02)', border: `1px solid ${isSel ? 'rgba(168,140,255,0.40)' : 'var(--line)'}` }}>
+                  <span className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0" style={{ background: isSel ? '#A88CFF' : 'rgba(255,255,255,0.04)', border: `1px solid ${isSel ? '#A88CFF' : 'var(--line-strong)'}` }}>
+                    {isSel && <I name="check" size={10} color="#0A0A12"/>}
+                  </span>
+                  <span className="rounded-md flex items-center justify-center flex-shrink-0" style={{ width: 24, height: 24, background: m.bg, border: `1px solid ${m.border}`, color: m.color }}><I name={m.icon} size={11}/></span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12.5px] font-medium truncate">{p.name}</div>
+                    <div className="text-[10.5px]" style={{ color: 'var(--text-3)' }}>{p.scope}</div>
+                  </div>
+                </button>
               );
             })}
           </div>
+        )}
+      </Card>
 
-          {/* Radar */}
-          {scopedProjects.length > 0 && scopedProjects.some(p=>(p.qualitative||[]).length>0) && (
-            <Card className="p-4 md:p-6">
-              <div className="eyebrow mb-4">Comparativa por dimensión</div>
-              <ResponsiveContainer width="100%" height={300}>
-                <RadarChart data={radarData}>
-                  <PolarGrid stroke="rgba(255,255,255,0.06)"/>
-                  <PolarAngleAxis dataKey="dim" tick={{ fill:'var(--text-2)', fontSize:11 }}/>
-                  <Tooltip contentStyle={{ background:'#0A0A12', border:'1px solid var(--line-strong)', borderRadius:8, fontSize:12 }}/>
-                  {scopedProjects.map((p,i)=>(
-                    <Radar key={p.id} name={p.name} dataKey={p.id} stroke={COLORS[i%COLORS.length]} fill={COLORS[i%COLORS.length]} fillOpacity={0.12}/>
-                  ))}
-                </RadarChart>
-              </ResponsiveContainer>
-              <div className="flex flex-wrap gap-3 mt-3 justify-center">
-                {scopedProjects.map((p,i)=>(
-                  <span key={p.id} className="flex items-center gap-1.5 text-[11px]"><span className="w-3 h-1.5 rounded-full inline-block" style={{ background:COLORS[i%COLORS.length] }}/>{p.name}</span>
-                ))}
+      {noProjects ? (
+        <Card className="p-12 text-center">
+          <div className="mx-auto mb-5 rounded-2xl flex items-center justify-center" style={{ width: 60, height: 60, background: 'rgba(168,140,255,0.07)', border: '1px solid rgba(168,140,255,0.25)', color: '#A88CFF' }}>
+            <I name="heart" size={26}/>
+          </div>
+          <h3 className="font-bold text-[18px] mb-2" style={{ fontFamily: 'Sora' }}>Selecciona uno o más proyectos</h3>
+          <p className="text-[13px] max-w-md mx-auto mb-5" style={{ color: 'var(--text-1)' }}>Elige los proyectos para ver sus retornos y crear nuevas evaluaciones.</p>
+          <div className="flex items-center justify-center gap-2">
+            <button className="btn btn-primary" onClick={() => setPickerOpen(true)}><I name="folder-plus" size={13}/>Elegir proyectos</button>
+            <button className="btn" onClick={() => setSelected(projects.map(p => p.id))}><I name="check-square" size={13}/>Ver todos</button>
+          </div>
+        </Card>
+      ) : (
+        <>
+          {/* KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card className="p-4 md:p-5">
+              <div className="eyebrow text-[10px] mb-2">Retorno cualitativo</div>
+              <div className="font-mono font-semibold text-[24px]" style={{ color: avgQual ? (avgQual >= 7 ? '#6FFFCB' : avgQual >= 5 ? '#FFD08A' : '#FFB0BF') : 'var(--text-3)' }}>
+                {avgQual ? avgQual.toFixed(1) : '—'}<span className="text-[14px] opacity-60">/10</span>
               </div>
+              <div className="text-[11px] mt-1" style={{ color: 'var(--text-2)' }}>promedio ponderado</div>
             </Card>
-          )}
+            <Card className="p-4 md:p-5">
+              <div className="eyebrow text-[10px] mb-2">ROI financiero</div>
+              <div className="font-mono font-semibold text-[24px]" style={{ color: avgRoi != null ? '#6FFFCB' : 'var(--text-3)' }}>
+                {avgRoi != null ? `+${avgRoi.toFixed(0)}%` : '—'}
+              </div>
+              <div className="text-[11px] mt-1" style={{ color: 'var(--text-2)' }}>{projectsWithRoi.length > 0 ? `${projectsWithRoi.length} proyecto${projectsWithRoi.length > 1 ? 's' : ''} con datos` : 'sin datos financieros'}</div>
+            </Card>
+            <Card className="p-4 md:p-5">
+              <div className="eyebrow text-[10px] mb-2">Con evaluaciones</div>
+              <div className="font-mono font-semibold text-[24px]">{ranking.length}<span className="text-[14px] opacity-60">/{scopedProjects.length}</span></div>
+              <div className="text-[11px] mt-1" style={{ color: 'var(--text-2)' }}>proyectos evaluados</div>
+            </Card>
+            <Card className="p-4 md:p-5">
+              <div className="eyebrow text-[10px] mb-2">Mejor dimensión</div>
+              <div className="font-bold text-[17px] truncate" style={{ fontFamily: 'Sora', color: bestDim ? '#6FFFCB' : 'var(--text-3)' }}>{bestDim ? bestDim.dim : '—'}</div>
+              <div className="text-[11px] mt-1" style={{ color: 'var(--text-2)' }}>{bestDim ? `${bestDim.avg.toFixed(1)}/10 promedio` : 'sin datos'}</div>
+            </Card>
+          </div>
 
-          {/* Qualitative detail */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {scopedProjects.map((p,i)=>(
-              <Card key={p.id} className="p-4 md:p-5">
-                <div className="flex items-center gap-2 mb-4"><span className="w-2.5 h-2.5 rounded-full" style={{ background:COLORS[i%COLORS.length] }}/><span className="font-semibold" style={{ fontFamily:'Sora' }}>{p.name}</span></div>
-                {(p.qualitative||[]).length>0 ? (
-                  <div className="space-y-3">
-                    {(p.qualitative||[]).map((d:any)=>(
-                      <div key={d.dim}>
-                        <div className="flex justify-between mb-1"><span className="text-[12px]">{d.dim}</span><span className="font-mono text-[12px]">{d.score}/10</span></div>
-                        <div className="progress" style={{ height:4 }}><i style={{ width:(d.score/10*100)+'%', background:COLORS[i%COLORS.length] }}/></div>
-                        {d.note && <div className="text-[10.5px] mt-1" style={{ color:'var(--text-2)' }}>{d.note}</div>}
+          {/* Radar + Ranking */}
+          {scopedProjects.some(p => (p.qualitative || []).length > 0) && (
+            <div className="grid gap-5" style={{ gridTemplateColumns: 'minmax(0,1.5fr) minmax(0,1fr)' }}>
+              <Card className="p-5 md:p-6">
+                <div className="eyebrow mb-1">Radar cualitativo</div>
+                <p className="text-[12px] mb-4" style={{ color: 'var(--text-2)' }}>Comparativa en {QUAL_DIMS.length} dimensiones · {scopedProjects.length} proyecto{scopedProjects.length > 1 ? 's' : ''}</p>
+                <ResponsiveContainer width="100%" height={280}>
+                  <RadarChart data={radarData}>
+                    <PolarGrid stroke="rgba(255,255,255,0.06)"/>
+                    <PolarAngleAxis dataKey="dim" tick={{ fill: 'var(--text-2)', fontSize: 11 }}/>
+                    <Tooltip contentStyle={{ background: '#0A0A12', border: '1px solid var(--line-strong)', borderRadius: 8, fontSize: 12 }}/>
+                    {scopedProjects.map((p, i) => (
+                      <Radar key={p.id} name={p.name} dataKey={p.id} stroke={COLORS[i % COLORS.length]} fill={COLORS[i % COLORS.length]} fillOpacity={0.13}/>
+                    ))}
+                  </RadarChart>
+                </ResponsiveContainer>
+                {scopedProjects.length > 1 && (
+                  <div className="flex flex-wrap gap-3 mt-3 justify-center">
+                    {scopedProjects.map((p, i) => (
+                      <span key={p.id} className="flex items-center gap-1.5 text-[11px]"><span className="w-3 h-1.5 rounded-full inline-block" style={{ background: COLORS[i % COLORS.length] }}/>{p.name}</span>
+                    ))}
+                  </div>
+                )}
+              </Card>
+              <Card className="p-5 md:p-6">
+                <div className="eyebrow mb-1">Ranking</div>
+                <p className="text-[12px] mb-4" style={{ color: 'var(--text-2)' }}>Por retorno cualitativo promedio</p>
+                {ranking.length > 0 ? (
+                  <div className="space-y-2">
+                    {ranking.map((p, i) => (
+                      <div key={p.id} className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--line)' }}>
+                        <span className="font-bold text-[18px] w-7 text-center flex-shrink-0" style={{ fontFamily: 'Sora', color: i === 0 ? '#F5A623' : i === 1 ? '#B7BAC7' : i === 2 ? '#C28A5A' : 'var(--text-3)' }}>{i + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-medium truncate">{p.name}</div>
+                          <div className="text-[10.5px]" style={{ color: 'var(--text-3)' }}>{p.scope}</div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="font-mono font-semibold text-[15px]" style={{ color: p.avg >= 8 ? '#6FFFCB' : p.avg >= 6 ? '#FFD08A' : 'var(--text-1)' }}>{p.avg.toFixed(1)}</div>
+                          <div className="text-[10px]" style={{ color: 'var(--text-3)' }}>de 10</div>
+                        </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-[12px] py-4 text-center" style={{ color:'var(--text-2)' }}>Sin evaluaciones. Agrega una con "Nueva evaluación".</div>
+                  <div className="text-center py-8 text-[12px]" style={{ color: 'var(--text-2)' }}>Sin evaluaciones en los proyectos seleccionados.</div>
                 )}
               </Card>
-            ))}
+            </div>
+          )}
+
+          {/* Financial performance */}
+          <Card className="p-5 md:p-6">
+            <div className="eyebrow mb-1">Desempeño financiero</div>
+            <p className="text-[12px] mb-4" style={{ color: 'var(--text-2)' }}>Presupuesto vs ejecutado · proyectos seleccionados</p>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={finChartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false}/>
+                <XAxis dataKey="name" tick={{ fill: 'var(--text-2)', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.08)' }} tickLine={false}/>
+                <YAxis tick={{ fill: 'var(--text-2)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={n => fmtShort(n)} width={52}/>
+                <Tooltip contentStyle={{ background: '#0F0F18', border: '1px solid var(--line-strong)', borderRadius: 10, fontSize: 12, padding: '8px 12px' }} formatter={(v: any) => [fmtCLP(Number(v)), undefined]} labelStyle={{ color: 'var(--text-1)', fontWeight: 600, marginBottom: 4 }} cursor={{ fill: 'rgba(255,255,255,0.03)' }}/>
+                <Legend wrapperStyle={{ fontSize: 11, color: 'var(--text-2)', paddingTop: 12 }}/>
+                <Bar dataKey="Presupuesto" fill="rgba(77,158,255,0.45)" radius={[4, 4, 0, 0]}/>
+                <Bar dataKey="Ejecutado" fill="#00D68F" radius={[4, 4, 0, 0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+
+          {/* ROI chart */}
+          {roiChartData.length > 0 && (
+            <Card className="p-5 md:p-6">
+              <div className="eyebrow mb-1">ROI Financiero</div>
+              <p className="text-[12px] mb-4" style={{ color: 'var(--text-2)' }}>Retorno sobre inversión · proyectos con datos cuantitativos</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={roiChartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false}/>
+                  <XAxis dataKey="name" tick={{ fill: 'var(--text-2)', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.08)' }} tickLine={false}/>
+                  <YAxis tick={{ fill: 'var(--text-2)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} width={40}/>
+                  <Tooltip contentStyle={{ background: '#0F0F18', border: '1px solid var(--line-strong)', borderRadius: 10, fontSize: 12, padding: '8px 12px' }} formatter={(v: any) => [`+${Number(v).toFixed(1)}%`, 'ROI']} labelStyle={{ color: 'var(--text-1)', fontWeight: 600, marginBottom: 4 }} cursor={{ fill: 'rgba(255,255,255,0.03)' }}/>
+                  <Bar dataKey="roi" name="ROI" fill="#6FFFCB" radius={[6, 6, 0, 0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
+          )}
+
+          {/* Qualitative detail per project */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {scopedProjects.map((p, i) => {
+              const qual = p.qualitative || [];
+              return (
+                <Card key={p.id} className="p-4 md:p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: COLORS[i % COLORS.length] }}/>
+                    <span className="font-semibold truncate" style={{ fontFamily: 'Sora' }}>{p.name}</span>
+                    {p.roi != null && <span className="pill pill-jade ml-auto !text-[10.5px]">ROI +{p.roi}%</span>}
+                  </div>
+                  {qual.length > 0 ? (
+                    <div className="space-y-3">
+                      {qual.map((d: any) => (
+                        <div key={d.dim}>
+                          <div className="flex justify-between mb-1"><span className="text-[12px]">{d.dim}</span><span className="font-mono text-[12px]">{d.score}/10</span></div>
+                          <div className="progress" style={{ height: 4 }}><i style={{ width: (d.score / 10 * 100) + '%', background: COLORS[i % COLORS.length] }}/></div>
+                          {d.note && <div className="text-[10.5px] mt-1" style={{ color: 'var(--text-2)' }}>{d.note}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[12px] py-4 text-center" style={{ color: 'var(--text-2)' }}>Sin evaluaciones. Agrega una con "Nueva evaluación".</div>
+                  )}
+                </Card>
+              );
+            })}
           </div>
         </>
       )}
 
-      <NewEvalPanel open={evalOpen} onClose={()=>setEvalOpen(false)} projects={projects} onSaved={()=>{}} />
+      <NewEvalPanel open={evalOpen} onClose={() => { setEvalOpen(false); onRefresh(); }} projects={scopedProjects.length > 0 ? scopedProjects : projects} onSaved={onRefresh} defaultProjectId={scopedProjects.length === 1 ? scopedProjects[0].id : undefined}/>
     </div>
   );
 }
 
 function NewEvalPanel({ open, onClose, projects, onSaved, defaultProjectId }: { open:boolean; onClose:()=>void; projects:any[]; onSaved:()=>void; defaultProjectId?:string }) {
   const [loading, setLoading] = useState(false);
-  const [projectId, setProjectId] = useState(defaultProjectId||'');
-  useEffect(() => { if (open) setProjectId(defaultProjectId||''); }, [open, defaultProjectId]);
-  const [scores, setScores] = useState<Record<string,number>>(Object.fromEntries(QUAL_DIMS.map(d=>[d,5])));
+  const [projectId, setProjectId] = useState(defaultProjectId || '');
+  const [evalType, setEvalType] = useState<'qual'|'quant'|'both'>('both');
+  const [scores, setScores] = useState<Record<string,number>>(Object.fromEntries(QUAL_DIMS.map(d => [d, 5])));
+  const [notes, setNotes] = useState('');
+  const [investment, setInvestment] = useState('');
+  const [revenue, setRevenue] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setProjectId(defaultProjectId || '');
+    setEvalType('both');
+    setScores(Object.fromEntries(QUAL_DIMS.map(d => [d, 5])));
+    setNotes(''); setInvestment(''); setRevenue('');
+  }, [open, defaultProjectId]);
+
+  const roi = investment && revenue && Number(investment) > 0
+    ? (Number(revenue) - Number(investment)) / Number(investment) * 100
+    : null;
+  const avgQual = QUAL_DIMS.reduce((s, d) => s + scores[d], 0) / QUAL_DIMS.length;
 
   async function handleSave() {
     if (!projectId) return;
     setLoading(true);
-    const qualitative = QUAL_DIMS.map(dim=>({ dim, score:scores[dim] }));
-    const { error } = await supabase.from('proyectos').update({ qualitative }).eq('id', projectId);
+    const updates: any = {};
+    if (evalType !== 'quant') updates.qualitative = QUAL_DIMS.map(dim => ({ dim, score: scores[dim], ...(notes ? { note: notes } : {}) }));
+    if (evalType !== 'qual' && roi !== null) updates.roi = Math.round(roi);
+    const { error } = await supabase.from('proyectos').update(updates).eq('id', projectId);
     setLoading(false);
     if (!error) { onSaved(); onClose(); }
-    else alert('Error: '+error.message);
+    else alert('Error: ' + error.message);
   }
 
   return (
-    <SlideOver open={open} onClose={onClose} subtitle="Nueva evaluación" title="Evaluar retorno cualitativo">
-      <div className="space-y-6">
-        <div><label className="label">Proyecto *</label>
-          <select className="select" value={projectId} onChange={e=>setProjectId(e.target.value)}>
+    <SlideOver open={open} onClose={onClose} subtitle="Nueva evaluación" title="Evaluar retorno de proyecto">
+      <div className="space-y-5">
+        <div><label className="label">Proyecto a evaluar *</label>
+          <select className="select" value={projectId} onChange={e => setProjectId(e.target.value)}>
             <option value="">Selecciona un proyecto...</option>
-            {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
-        <div className="space-y-5">
-          {QUAL_DIMS.map(dim=>(
-            <div key={dim}>
-              <div className="flex justify-between mb-2"><label className="label !mb-0">{dim}</label><span className="font-mono text-[13px]" style={{ color:'var(--jade)' }}>{scores[dim]}/10</span></div>
-              <input type="range" min={1} max={10} value={scores[dim]} onChange={e=>setScores({...scores,[dim]:Number(e.target.value)})} className="slider-jade w-full" style={{ '--val':`${(scores[dim]-1)/9*100}%` } as any}/>
-              <div className="flex justify-between text-[10px] mt-1" style={{ color:'var(--text-3)' }}><span>1 · Muy bajo</span><span>10 · Excelente</span></div>
-            </div>
-          ))}
+        <div>
+          <label className="label mb-2">Tipo de evaluación</label>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { val: 'qual',  label: 'Cualitativo', icon: 'heart',       desc: 'Bienestar, impacto, aprendizaje' },
+              { val: 'quant', label: 'Financiero',  icon: 'trending-up', desc: 'ROI e ingresos vs inversión' },
+              { val: 'both',  label: 'Ambos',       icon: 'combine',     desc: 'Evaluación completa' },
+            ] as const).map(t => (
+              <button key={t.val} onClick={() => setEvalType(t.val)} type="button"
+                className="flex flex-col items-start gap-1.5 p-3 rounded-xl text-left transition-all"
+                style={{ background: evalType === t.val ? 'rgba(168,140,255,0.10)' : 'rgba(255,255,255,0.02)', border: `1px solid ${evalType === t.val ? 'rgba(168,140,255,0.40)' : 'var(--line)'}` }}>
+                <div className="flex items-center gap-2">
+                  <I name={t.icon} size={14} color={evalType === t.val ? '#A88CFF' : 'var(--text-2)'}/>
+                  <span className="text-[12.5px] font-medium" style={{ color: evalType === t.val ? '#A88CFF' : 'var(--text-1)' }}>{t.label}</span>
+                </div>
+                <span className="text-[10.5px]" style={{ color: 'var(--text-2)' }}>{t.desc}</span>
+              </button>
+            ))}
+          </div>
         </div>
+
+        {(evalType === 'qual' || evalType === 'both') && (
+          <div className="hairline-t pt-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <I name="heart" size={15} color="#A88CFF"/>
+              <span className="font-semibold text-[14px]">Evaluación cualitativa</span>
+              <span className="text-[11px]" style={{ color: 'var(--text-2)' }}>1 mínimo · 10 máximo</span>
+            </div>
+            {QUAL_DIMS.map(dim => (
+              <div key={dim}>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="label !mb-0">{dim}</label>
+                  <span className="font-mono font-semibold text-[14px]" style={{ color: scores[dim] >= 8 ? '#6FFFCB' : scores[dim] >= 5 ? '#FFD08A' : '#FFB0BF' }}>{scores[dim]}/10</span>
+                </div>
+                <input type="range" min={1} max={10} value={scores[dim]} onChange={e => setScores({ ...scores, [dim]: Number(e.target.value) })} className="slider-jade w-full" style={{ '--val': `${(scores[dim] - 1) / 9 * 100}%` } as any}/>
+                <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--text-3)' }}><span>Muy bajo</span><span>Excelente</span></div>
+              </div>
+            ))}
+            <div className="flex justify-between items-center px-3 py-2 rounded-lg" style={{ background: 'rgba(168,140,255,0.06)', border: '1px solid rgba(168,140,255,0.2)' }}>
+              <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>Promedio cualitativo</span>
+              <span className="font-mono font-bold text-[16px]" style={{ color: avgQual >= 8 ? '#6FFFCB' : avgQual >= 5 ? '#FFD08A' : '#FFB0BF' }}>{avgQual.toFixed(1)}/10</span>
+            </div>
+            <div><label className="label">Notas / aprendizajes</label>
+              <textarea className="input" style={{ minHeight: 68, resize: 'none' }} placeholder="¿Qué aprendiste? ¿Qué harías diferente?" value={notes} onChange={e => setNotes(e.target.value)}/>
+            </div>
+          </div>
+        )}
+
+        {(evalType === 'quant' || evalType === 'both') && (
+          <div className="hairline-t pt-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <I name="trending-up" size={15} color="var(--jade)"/>
+              <span className="font-semibold text-[14px]">Evaluación financiera</span>
+              <span className="text-[11px]" style={{ color: 'var(--text-2)' }}>opcional · ROI</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="label">Inversión total (CLP)</label><input className="input font-mono" type="number" placeholder="0" value={investment} onChange={e => setInvestment(e.target.value)}/></div>
+              <div><label className="label">Retorno / ingresos (CLP)</label><input className="input font-mono" type="number" placeholder="0" value={revenue} onChange={e => setRevenue(e.target.value)}/></div>
+            </div>
+            {roi !== null && (
+              <div className="flex items-center justify-between px-3 py-3 rounded-lg" style={{ background: roi >= 0 ? 'rgba(0,214,143,0.06)' : 'rgba(255,77,109,0.06)', border: `1px solid ${roi >= 0 ? 'rgba(0,214,143,0.2)' : 'rgba(255,77,109,0.2)'}` }}>
+                <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>ROI calculado</span>
+                <span className="font-mono font-bold text-[18px]" style={{ color: roi >= 0 ? '#6FFFCB' : '#FFB0BF' }}>{roi >= 0 ? '+' : ''}{roi.toFixed(1)}%</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div className="hairline-t mt-8 pt-5 flex items-center justify-between">
         <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
-        <button className="btn btn-primary" onClick={handleSave} disabled={loading||!projectId}><I name="check" size={14}/>{loading?'Guardando...':'Guardar evaluación'}</button>
+        <button className="btn btn-primary" onClick={handleSave} disabled={loading || !projectId}><I name="check" size={14}/>{loading ? 'Guardando...' : 'Guardar evaluación'}</button>
       </div>
     </SlideOver>
   );
@@ -2412,7 +2679,7 @@ export default function App() {
             {route.view==='project_detail' && currentProject && <ProjectDetail project={currentProject} onBack={()=>setRoute({view:'projects'})} onRefresh={loadData}/>}
             {route.view==='quotes' && <QuotesView projects={projects} searchText={searchText}/>}
             {route.view==='inputs' && <InputsView projects={projects} searchText={searchText}/>}
-            {route.view==='returns' && <ReturnsView projects={projects}/>}
+            {route.view==='returns' && <ReturnsView projects={projects} onRefresh={loadData}/>}
             {route.view==='settings' && <SettingsView/>}
           </div>
         </div>
