@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useMemo, useLayoutEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import type { MaterialServicio } from '../types/domain';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, Legend } from 'recharts';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
@@ -38,6 +39,13 @@ const CAT_META: Record<string, { color: string; cls: string }> = {
   'Software': { color: '#A88CFF', cls: 'pill-violet' },
   'RRHH':     { color: '#00D68F', cls: 'pill-jade' },
   'Otro':     { color: '#B7BAC7', cls: '' },
+};
+
+const STATUS_MAT_META: Record<string, { color: string; cls: string }> = {
+  'Activo':      { color: '#00D68F', cls: 'pill-jade' },
+  'Pendiente':   { color: '#F5A623', cls: 'pill-amber' },
+  'En revisión': { color: '#4D9EFF', cls: 'pill-blue' },
+  'Inactivo':    { color: '#7A7E8F', cls: '' },
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────
@@ -139,10 +147,9 @@ function Sidebar({ active, onChange, collapsed, onToggle, projects, mobileOpen, 
   const totalBudget = projects.reduce((a: number, p: any) => a + (p.budget || 0), 0);
   const totalExec = projects.reduce((a: number, p: any) => a + (p.executed || 0), 0);
   const pct = totalBudget > 0 ? (totalExec / totalBudget) * 100 : 0;
-  const W = collapsed ? 64 : 240;
-
-  const content = (
-    <aside className="hairline-r relative flex flex-col h-full" style={{ width: W, transition: 'width 320ms cubic-bezier(.2,.7,.2,1)', background: 'linear-gradient(180deg,rgba(255,255,255,0.018),rgba(255,255,255,0.003))', backdropFilter: 'blur(20px)' }}>
+  const widthClass = collapsed ? 'w-16' : 'w-60 md:w-64';
+    return (
+      <aside className={`hairline-r relative flex flex-col h-full ${widthClass} transition-width duration-300 ease-out`} style={{ transition: 'width 320ms cubic-bezier(.2,.7,.2,1)', background: 'linear-gradient(180deg,rgba(255,255,255,0.018),rgba(255,255,255,0.003))', backdropFilter: 'blur(20px)' }}>
       <div className="hairline-b flex items-center gap-3 px-4" style={{ height: 72 }}>
         <div style={{ width: 32, height: 32, flexShrink: 0 }}>
           <svg viewBox="0 0 32 32" width="32" height="32">
@@ -203,7 +210,7 @@ function Sidebar({ active, onChange, collapsed, onToggle, projects, mobileOpen, 
       {/* Mobile overlay */}
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex" onClick={onMobileClose}>
-          <div onClick={e => e.stopPropagation()} style={{ width: 240 }}>{content}</div>
+          <div onClick={e => e.stopPropagation()} className="w-60 md:w-64">{content}</div>
           <div className="flex-1 bg-black/50"/>
         </div>
       )}
@@ -638,7 +645,7 @@ function ProjectsView({ projects, onOpenProject, onRefresh }: { projects: any[];
 
       {view==='list' ? (
         <div className="overflow-x-auto">
-          <Card className="overflow-hidden" style={{ minWidth:700 }}>
+          <Card className="overflow-hidden min-w-full md:min-w-[700px]">
             <table className="tbl">
               <thead><tr><th>Proyecto</th><th style={{width:120}}>Ámbito</th><th style={{width:120}}>Presupuesto</th><th style={{width:120}}>Ejecutado</th><th style={{width:180}}>Avance</th><th style={{width:100}}>Estado</th><th style={{width:40}}></th></tr></thead>
               <tbody>
@@ -1638,91 +1645,317 @@ function InsumoFormPanel({ open, onClose, projects, defaultProjectId, insumo }: 
   );
 }
 
+// ─── MAT. Y SERVICIOS FORM PANEL ─────────────────────────────
+function MatServicioFormPanel({ open, onClose, projects, defaultProjectId, item }: { open: boolean; onClose: () => void; projects: any[]; defaultProjectId?: string; item?: MaterialServicio }) {
+  const isEdit = !!item;
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ name: '', category: 'Material', supplier: '', unit: 'unidad', unit_price: '', quantity: '1', status: 'Activo', notes: '', project_id: '' });
+
+  useEffect(() => {
+    if (!open) return;
+    if (item) {
+      setForm({ name: item.name || '', category: item.category || 'Material', supplier: item.supplier || '', unit: item.unit || 'unidad', unit_price: String(item.unit_price || ''), quantity: String(item.quantity || 1), status: item.status || 'Activo', notes: item.notes || '', project_id: item.project_id || '' });
+    } else {
+      setForm({ name: '', category: 'Material', supplier: '', unit: 'unidad', unit_price: '', quantity: '1', status: 'Activo', notes: '', project_id: defaultProjectId || '' });
+    }
+  }, [open, item?.id]);
+
+  async function handleSave() {
+    if (!form.name.trim()) return;
+    setLoading(true);
+    const payload = { name: form.name, category: form.category, supplier: form.supplier || null, unit: form.unit, unit_price: Number(form.unit_price) || 0, quantity: Number(form.quantity) || 1, status: form.status, notes: form.notes || null, project_id: form.project_id || null };
+    const { error } = isEdit
+      ? await supabase.from('lista_materiales_servicios').update(payload).eq('id', item!.id)
+      : await supabase.from('lista_materiales_servicios').insert([{ id: 'ms' + Date.now(), ...payload }]);
+    setLoading(false);
+    if (!error) onClose();
+    else alert('Error: ' + error.message);
+  }
+
+  const subtotal = Number(form.quantity) * Number(form.unit_price);
+
+  return (
+    <SlideOver open={open} onClose={onClose} subtitle={isEdit ? 'Editar ítem' : 'Nuevo ítem'} title={isEdit ? (form.name || 'Editar') : 'Registrar material o servicio'}>
+      <div className="space-y-5">
+        <div><label className="label">Nombre *</label><input className="input" placeholder="Ej. Pintura látex, Consultoría legal…" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+        <div><label className="label">Categoría</label>
+          <div className="grid grid-cols-3 gap-2">
+            {Object.entries(CAT_META).map(([cat, meta]) => (
+              <button key={cat} onClick={() => setForm({ ...form, category: cat })} className="py-2.5 rounded-lg text-[12px] font-medium transition-all" style={{ background: form.category === cat ? 'rgba(0,214,143,0.08)' : 'rgba(255,255,255,0.02)', border: `1px solid ${form.category === cat ? 'rgba(0,214,143,0.45)' : 'var(--line)'}`, color: form.category === cat ? '#6FFFCB' : meta.color }}>{cat}</button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div><label className="label">Cantidad</label><input className="input" type="number" min="0" placeholder="1" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
+          <div><label className="label">Unidad</label><input className="input" placeholder="m², kg…" value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} /></div>
+          <div><label className="label">P. unitario (CLP)</label><input className="input" type="number" placeholder="0" value={form.unit_price} onChange={e => setForm({ ...form, unit_price: e.target.value })} /></div>
+        </div>
+        {subtotal > 0 && (
+          <div className="flex justify-between items-center px-3 py-2 rounded-lg" style={{ background: 'rgba(0,214,143,0.06)', border: '1px solid rgba(0,214,143,0.2)' }}>
+            <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>Subtotal</span>
+            <span className="font-mono font-semibold text-[14px]" style={{ color: 'var(--jade)' }}>{fmtCLP(subtotal)}</span>
+          </div>
+        )}
+        <div><label className="label">Proveedor</label><input className="input" placeholder="Nombre del proveedor" value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} /></div>
+        <div><label className="label">Estado</label>
+          <div className="grid grid-cols-2 gap-2">
+            {Object.entries(STATUS_MAT_META).map(([s, meta]) => (
+              <button key={s} onClick={() => setForm({ ...form, status: s })} className="py-2.5 rounded-lg text-[12px] font-medium transition-all" style={{ background: form.status === s ? 'rgba(0,214,143,0.08)' : 'rgba(255,255,255,0.02)', border: `1px solid ${form.status === s ? 'rgba(0,214,143,0.45)' : 'var(--line)'}`, color: form.status === s ? '#6FFFCB' : meta.color }}>{s}</button>
+            ))}
+          </div>
+        </div>
+        <div><label className="label">Proyecto (opcional)</label>
+          <select className="select" value={form.project_id} onChange={e => setForm({ ...form, project_id: e.target.value })}>
+            <option value="">Sin proyecto</option>
+            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        <div><label className="label">Notas</label><input className="input" placeholder="Descripción corta" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+      </div>
+      <div className="hairline-t mt-8 pt-5 flex items-center justify-between">
+        <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+        <button className="btn btn-primary" onClick={handleSave} disabled={loading}><I name="check" size={14} />{loading ? 'Guardando...' : (isEdit ? 'Guardar cambios' : 'Guardar ítem')}</button>
+      </div>
+    </SlideOver>
+  );
+}
+
 // ─── INPUTS VIEW ─────────────────────────────────────────────
 function InputsView({ projects, searchText = '' }: { projects: any[]; searchText?: string }) {
+  const [activeTab, setActiveTab] = useState<'insumos' | 'materiales'>('insumos');
+
+  // ── Insumos state ──
   const [insumos, setInsumos] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingInsumos, setLoadingInsumos] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [editInsumo, setEditInsumo] = useState<any>(null);
   const [filterProjectId, setFilterProjectId] = useState('');
 
+  // ── Materiales y Servicios state ──
+  const [materiales, setMateriales] = useState<MaterialServicio[]>([]);
+  const [loadingMat, setLoadingMat] = useState(true);
+  const [matFormOpen, setMatFormOpen] = useState(false);
+  const [editMat, setEditMat] = useState<MaterialServicio | null>(null);
+  const [filterMatProjectId, setFilterMatProjectId] = useState('');
+  const [filterMatStatus, setFilterMatStatus] = useState('');
+  const [filterMatCategory, setFilterMatCategory] = useState('');
+
   async function fetchInsumos() {
     const { data } = await supabase.from('insumos').select('*').order('created_at', { ascending: false });
     if (data) setInsumos(data);
-    setLoading(false);
+    setLoadingInsumos(false);
   }
-  useEffect(() => { fetchInsumos(); }, []);
+  async function fetchMateriales() {
+    const { data } = await supabase.from('lista_materiales_servicios').select('*').order('created_at', { ascending: false });
+    if (data) setMateriales(data as MaterialServicio[]);
+    setLoadingMat(false);
+  }
+  useEffect(() => { fetchInsumos(); fetchMateriales(); }, []);
 
-  async function handleDelete(i:any) {
+  async function handleDeleteInsumo(i: any) {
     if (!confirm(`¿Eliminar "${i.name}"?`)) return;
-    const { error } = await supabase.from('insumos').delete().eq('id',i.id);
-    if (error) { alert('Error: '+error.message); return; }
+    const { error } = await supabase.from('insumos').delete().eq('id', i.id);
+    if (error) { alert('Error: ' + error.message); return; }
     fetchInsumos();
+  }
+  async function handleDeleteMat(m: MaterialServicio) {
+    if (!confirm(`¿Eliminar "${m.name}"?`)) return;
+    const { error } = await supabase.from('lista_materiales_servicios').delete().eq('id', m.id);
+    if (error) { alert('Error: ' + error.message); return; }
+    fetchMateriales();
   }
 
   const visibleInsumos = filterProjectId ? insumos.filter(i => i.project_id === filterProjectId) : insumos;
-  const filteredInsumos = visibleInsumos.filter(i => 
+  const filteredInsumos = visibleInsumos.filter(i =>
     i.name.toLowerCase().includes(searchText.toLowerCase()) ||
     i.category.toLowerCase().includes(searchText.toLowerCase()) ||
     (i.supplier && i.supplier.toLowerCase().includes(searchText.toLowerCase())) ||
     (i.note && i.note.toLowerCase().includes(searchText.toLowerCase()))
   );
-  const getProject = (pid:string) => projects.find(p=>p.id===pid);
+
+  const filteredMateriales = materiales.filter(m => {
+    const matchText = m.name.toLowerCase().includes(searchText.toLowerCase()) ||
+      m.category.toLowerCase().includes(searchText.toLowerCase()) ||
+      (m.supplier && m.supplier.toLowerCase().includes(searchText.toLowerCase())) ||
+      (m.notes && m.notes.toLowerCase().includes(searchText.toLowerCase()));
+    const matchProject = !filterMatProjectId || m.project_id === filterMatProjectId;
+    const matchStatus = !filterMatStatus || m.status === filterMatStatus;
+    const matchCat = !filterMatCategory || m.category === filterMatCategory;
+    return matchText && matchProject && matchStatus && matchCat;
+  });
+
+  const getProject = (pid: string | null | undefined) => pid ? projects.find(p => p.id === pid) : null;
+  const totalMat = filteredMateriales.reduce((s, m) => s + m.unit_price * m.quantity, 0);
 
   return (
     <div className="p-4 md:p-8 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily:'Sora' }}>Catálogo de insumos</h2><p className="text-[12px] mt-0.5" style={{ color:'var(--text-2)' }}>Materiales, servicios y recursos de tus proyectos</p></div>
-        <div className="flex items-center gap-2">
-          <select className="select !h-9 !text-[12px]" style={{ minWidth:160 }} value={filterProjectId} onChange={e=>setFilterProjectId(e.target.value)}>
-            <option value="">Todos los proyectos</option>
-            {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <button className="btn btn-primary" onClick={()=>{setEditInsumo(null);setFormOpen(true);}}><I name="plus" size={14}/>Nuevo insumo</button>
-        </div>
+
+      {/* ── Sub-tab navigation ── */}
+      <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line)', width: 'fit-content' }}>
+        {([
+          { id: 'insumos',    label: 'Catálogo de Insumos',      icon: 'package' },
+          { id: 'materiales', label: 'Materiales y Servicios',    icon: 'layers'  },
+        ] as const).map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition-all"
+            style={{ background: activeTab === tab.id ? 'rgba(0,214,143,0.1)' : 'transparent', color: activeTab === tab.id ? '#6FFFCB' : 'var(--text-2)', border: activeTab === tab.id ? '1px solid rgba(0,214,143,0.3)' : '1px solid transparent' }}>
+            <I name={tab.icon} size={14} />{tab.label}
+          </button>
+        ))}
       </div>
 
-      {loading ? (
-        <div className="text-center py-12" style={{ color:'var(--text-2)' }}>Cargando...</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <Card className="overflow-hidden" style={{ minWidth:620 }}>
-            <table className="tbl">
-              <thead><tr><th>Insumo</th><th style={{width:120}}>Categoría</th><th style={{width:80}}>Cant.</th><th style={{width:100}}>Unidad</th><th style={{width:140}}>P. unitario</th><th>Proyecto</th><th style={{width:80}}/></tr></thead>
-              <tbody>
-                {filteredInsumos.map(i => {
-                  const catMeta = CAT_META[i.category] || CAT_META['Otro'];
-                  const proj = getProject(i.project_id);
-                  return (
-                    <tr key={i.id}>
-                      <td><div className="font-medium">{i.name}</div>{i.note && <div className="text-[10.5px]" style={{ color:'var(--text-3)' }}>{i.note}</div>}</td>
-                      <td><span className={'pill '+(catMeta.cls||'')}>{i.category||'Otro'}</span></td>
-                      <td className="font-mono text-[12px]">{i.quantity||1}</td>
-                      <td className="font-mono text-[12px]">{i.unit||'—'}</td>
-                      <td className="font-mono">{fmtCLP(i.unit_price||0)}</td>
-                      <td className="text-[12px]" style={{ color:'var(--text-1)' }}>{proj?.name||'—'}</td>
-                      <td>
-                        <div className="flex items-center gap-1">
-                          <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Editar" onClick={()=>{setEditInsumo(i);setFormOpen(true);}}><I name="pencil" size={13}/></button>
-                          <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Eliminar" onClick={()=>handleDelete(i)}><I name="trash-2" size={13} color="#FF4D6D"/></button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {filteredInsumos.length===0 && (
-              <div className="p-12 text-center" style={{ color:'var(--text-2)' }}>
-                <I name="package" size={32} className="mx-auto mb-3 opacity-40"/>
-                <p className="mb-4">{filterProjectId ? 'No hay insumos para este proyecto.' : 'No hay insumos registrados.'}</p>
-                <button className="btn btn-primary mx-auto" onClick={()=>{setEditInsumo(null);setFormOpen(true);}}><I name="plus" size={14}/>Nuevo insumo</button>
-              </div>
-            )}
-          </Card>
-        </div>
+      {/* ══ Tab: Catálogo de Insumos ══ */}
+      {activeTab === 'insumos' && (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily: 'Sora' }}>Catálogo de insumos</h2><p className="text-[12px] mt-0.5" style={{ color: 'var(--text-2)' }}>Materiales, servicios y recursos de tus proyectos</p></div>
+            <div className="flex items-center gap-2">
+              <select className="select !h-9 !text-[12px]" style={{ minWidth: 160 }} value={filterProjectId} onChange={e => setFilterProjectId(e.target.value)}>
+                <option value="">Todos los proyectos</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <button className="btn btn-primary" onClick={() => { setEditInsumo(null); setFormOpen(true); }}><I name="plus" size={14} />Nuevo insumo</button>
+            </div>
+          </div>
+          {loadingInsumos ? (
+            <div className="text-center py-12" style={{ color: 'var(--text-2)' }}>Cargando...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Card className="overflow-hidden" style={{ minWidth: 620 }}>
+                <table className="tbl">
+                  <thead><tr><th>Insumo</th><th style={{ width: 120 }}>Categoría</th><th style={{ width: 80 }}>Cant.</th><th style={{ width: 100 }}>Unidad</th><th style={{ width: 140 }}>P. unitario</th><th>Proyecto</th><th style={{ width: 80 }} /></tr></thead>
+                  <tbody>
+                    {filteredInsumos.map(i => {
+                      const catMeta = CAT_META[i.category] || CAT_META['Otro'];
+                      const proj = getProject(i.project_id);
+                      return (
+                        <tr key={i.id}>
+                          <td><div className="font-medium">{i.name}</div>{i.note && <div className="text-[10.5px]" style={{ color: 'var(--text-3)' }}>{i.note}</div>}</td>
+                          <td><span className={'pill ' + (catMeta.cls || '')}>{i.category || 'Otro'}</span></td>
+                          <td className="font-mono text-[12px]">{i.quantity || 1}</td>
+                          <td className="font-mono text-[12px]">{i.unit || '—'}</td>
+                          <td className="font-mono">{fmtCLP(i.unit_price || 0)}</td>
+                          <td className="text-[12px]" style={{ color: 'var(--text-1)' }}>{proj?.name || '—'}</td>
+                          <td>
+                            <div className="flex items-center gap-1">
+                              <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Editar" onClick={() => { setEditInsumo(i); setFormOpen(true); }}><I name="pencil" size={13} /></button>
+                              <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Eliminar" onClick={() => handleDeleteInsumo(i)}><I name="trash-2" size={13} color="#FF4D6D" /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {filteredInsumos.length === 0 && (
+                  <div className="p-12 text-center" style={{ color: 'var(--text-2)' }}>
+                    <I name="package" size={32} className="mx-auto mb-3 opacity-40" />
+                    <p className="mb-4">{filterProjectId ? 'No hay insumos para este proyecto.' : 'No hay insumos registrados.'}</p>
+                    <button className="btn btn-primary mx-auto" onClick={() => { setEditInsumo(null); setFormOpen(true); }}><I name="plus" size={14} />Nuevo insumo</button>
+                  </div>
+                )}
+              </Card>
+            </div>
+          )}
+          <InsumoFormPanel open={formOpen} onClose={() => { setFormOpen(false); fetchInsumos(); }} projects={projects} insumo={editInsumo || undefined} />
+        </>
       )}
-      <InsumoFormPanel open={formOpen} onClose={()=>{setFormOpen(false);fetchInsumos();}} projects={projects} insumo={editInsumo||undefined}/>
+
+      {/* ══ Tab: Lista de Materiales y Servicios ══ */}
+      {activeTab === 'materiales' && (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily: 'Sora' }}>Lista de Materiales y Servicios</h2>
+              <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-2)' }}>Registro con estado y seguimiento de ítems</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select className="select !h-9 !text-[12px]" style={{ minWidth: 140 }} value={filterMatCategory} onChange={e => setFilterMatCategory(e.target.value)}>
+                <option value="">Todas las categorías</option>
+                {Object.keys(CAT_META).map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select className="select !h-9 !text-[12px]" style={{ minWidth: 130 }} value={filterMatStatus} onChange={e => setFilterMatStatus(e.target.value)}>
+                <option value="">Todos los estados</option>
+                {Object.keys(STATUS_MAT_META).map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select className="select !h-9 !text-[12px]" style={{ minWidth: 160 }} value={filterMatProjectId} onChange={e => setFilterMatProjectId(e.target.value)}>
+                <option value="">Todos los proyectos</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <button className="btn btn-primary" onClick={() => { setEditMat(null); setMatFormOpen(true); }}><I name="plus" size={14} />Nuevo ítem</button>
+            </div>
+          </div>
+
+          {filteredMateriales.length > 0 && (
+            <div className="flex items-center gap-6 px-4 py-3 rounded-xl" style={{ background: 'rgba(0,214,143,0.06)', border: '1px solid rgba(0,214,143,0.2)' }}>
+              <div><span className="text-[11px]" style={{ color: 'var(--text-2)' }}>Ítems</span><p className="font-mono font-bold text-[16px]">{filteredMateriales.length}</p></div>
+              <div className="w-px h-8" style={{ background: 'var(--line)' }} />
+              <div><span className="text-[11px]" style={{ color: 'var(--text-2)' }}>Total</span><p className="font-mono font-bold text-[16px]" style={{ color: 'var(--jade)' }}>{fmtCLP(totalMat)}</p></div>
+            </div>
+          )}
+
+          {loadingMat ? (
+            <div className="text-center py-12" style={{ color: 'var(--text-2)' }}>Cargando...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Card className="overflow-hidden" style={{ minWidth: 860 }}>
+                <table className="tbl">
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th style={{ width: 110 }}>Categoría</th>
+                      <th>Proveedor</th>
+                      <th style={{ width: 70 }}>Cant.</th>
+                      <th style={{ width: 80 }}>Unidad</th>
+                      <th style={{ width: 130 }}>P. Unitario</th>
+                      <th style={{ width: 130 }}>Subtotal</th>
+                      <th style={{ width: 110 }}>Estado</th>
+                      <th>Proyecto</th>
+                      <th style={{ width: 80 }} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMateriales.map(m => {
+                      const catMeta = CAT_META[m.category] || CAT_META['Otro'];
+                      const statusMeta = STATUS_MAT_META[m.status] || STATUS_MAT_META['Inactivo'];
+                      const proj = getProject(m.project_id);
+                      const subtotal = m.unit_price * m.quantity;
+                      return (
+                        <tr key={m.id}>
+                          <td><div className="font-medium">{m.name}</div>{m.notes && <div className="text-[10.5px]" style={{ color: 'var(--text-3)' }}>{m.notes}</div>}</td>
+                          <td><span className={'pill ' + (catMeta.cls || '')}>{m.category}</span></td>
+                          <td className="text-[12px]" style={{ color: 'var(--text-1)' }}>{m.supplier || '—'}</td>
+                          <td className="font-mono text-[12px]">{m.quantity}</td>
+                          <td className="font-mono text-[12px]">{m.unit}</td>
+                          <td className="font-mono text-[12px]">{fmtCLP(m.unit_price)}</td>
+                          <td className="font-mono font-semibold" style={{ color: 'var(--jade)' }}>{fmtCLP(subtotal)}</td>
+                          <td><span className={'pill ' + (statusMeta.cls || '')}>{m.status}</span></td>
+                          <td className="text-[12px]" style={{ color: 'var(--text-1)' }}>{proj?.name || '—'}</td>
+                          <td>
+                            <div className="flex items-center gap-1">
+                              <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Editar" onClick={() => { setEditMat(m); setMatFormOpen(true); }}><I name="pencil" size={13} /></button>
+                              <button className="btn btn-ghost !w-7 !h-7 !p-0" title="Eliminar" onClick={() => handleDeleteMat(m)}><I name="trash-2" size={13} color="#FF4D6D" /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {filteredMateriales.length === 0 && (
+                  <div className="p-12 text-center" style={{ color: 'var(--text-2)' }}>
+                    <I name="layers" size={32} className="mx-auto mb-3 opacity-40" />
+                    <p className="mb-4">No hay materiales o servicios registrados.</p>
+                    <button className="btn btn-primary mx-auto" onClick={() => { setEditMat(null); setMatFormOpen(true); }}><I name="plus" size={14} />Nuevo ítem</button>
+                  </div>
+                )}
+              </Card>
+            </div>
+          )}
+          <MatServicioFormPanel open={matFormOpen} onClose={() => { setMatFormOpen(false); fetchMateriales(); }} projects={projects} item={editMat || undefined} />
+        </>
+      )}
+
     </div>
   );
 }
