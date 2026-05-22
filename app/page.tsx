@@ -148,8 +148,8 @@ function Sidebar({ active, onChange, collapsed, onToggle, projects, mobileOpen, 
   const totalExec = projects.reduce((a: number, p: any) => a + (p.executed || 0), 0);
   const pct = totalBudget > 0 ? (totalExec / totalBudget) * 100 : 0;
   const widthClass = collapsed ? 'w-16' : 'w-60 md:w-64';
-    return (
-      <aside className={`hairline-r relative flex flex-col h-full ${widthClass} transition-width duration-300 ease-out`} style={{ transition: 'width 320ms cubic-bezier(.2,.7,.2,1)', background: 'linear-gradient(180deg,rgba(255,255,255,0.018),rgba(255,255,255,0.003))', backdropFilter: 'blur(20px)' }}>
+  const content = (
+    <aside className={`hairline-r relative flex flex-col h-full ${widthClass} transition-width duration-300 ease-out`} style={{ transition: 'width 320ms cubic-bezier(.2,.7,.2,1)', background: 'linear-gradient(180deg,rgba(255,255,255,0.018),rgba(255,255,255,0.003))', backdropFilter: 'blur(20px)' }}>
       <div className="hairline-b flex items-center gap-3 px-4" style={{ height: 72 }}>
         <div style={{ width: 32, height: 32, flexShrink: 0 }}>
           <svg viewBox="0 0 32 32" width="32" height="32">
