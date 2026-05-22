@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useMemo, useLayoutEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import type { MaterialServicio } from '../types/domain';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, Legend } from 'recharts';
 
@@ -143,7 +144,7 @@ function SlideOver({ open, onClose, title, subtitle, children, width = 580 }: { 
 }
 
 // ─── SIDEBAR ─────────────────────────────────────────────────
-function Sidebar({ active, onChange, collapsed, onToggle, projects, mobileOpen, onMobileClose }: any) {
+function Sidebar({ active, onChange, collapsed, onToggle, projects, mobileOpen, onMobileClose, navItems = NAV }: any) {
   const totalBudget = projects.reduce((a: number, p: any) => a + (p.budget || 0), 0);
   const totalExec = projects.reduce((a: number, p: any) => a + (p.executed || 0), 0);
   const pct = totalBudget > 0 ? (totalExec / totalBudget) * 100 : 0;
@@ -167,7 +168,7 @@ function Sidebar({ active, onChange, collapsed, onToggle, projects, mobileOpen, 
       <nav className="flex-1 px-2 py-4 overflow-y-auto">
         {!collapsed && <div className="px-3 pb-2 eyebrow">Workspace</div>}
         <div className="flex flex-col gap-0.5">
-          {NAV.map(item => (
+          {navItems.map((item: any) => (
             <div key={item.id} className={'nav-item ' + (active === item.id ? 'active' : '')} onClick={() => { onChange(item.id); onMobileClose && onMobileClose(); }} title={item.label}>
               <I name={item.icon} size={17}/>
               {!collapsed && <span className="flex-1">{item.label}</span>}
@@ -2390,47 +2391,211 @@ function NewEvalPanel({ open, onClose, projects, onSaved, defaultProjectId }: { 
   );
 }
 
-// ─── SETTINGS VIEW ───────────────────────────────────────────
-function SettingsView() {
-  const [name, setName] = useState('Marcelo');
-  const [saved, setSaved] = useState(false);
-  const [darkMode, setDarkMode] = useState(true);
-
-function toggleTheme() {
-  const next = !darkMode;
-  setDarkMode(next);
-  document.body.classList.toggle('light', !next);
+// ─── LOGIN SCREEN ────────────────────────────────────────────
+function LoginScreen() {
+  const { signInWithGoogle } = useAuth();
+  const [busy, setBusy] = useState(false);
+  async function handleGoogle() {
+    setBusy(true);
+    await signInWithGoogle();
+    setBusy(false);
+  }
+  return (
+    <div className="app-bg w-screen h-screen flex items-center justify-center relative overflow-hidden">
+      <div className="blur-spot" style={{ width:600,height:600,top:-200,left:-200,background:'rgba(0,214,143,0.10)' }}/>
+      <div className="blur-spot" style={{ width:500,height:500,bottom:-180,right:-120,background:'rgba(31,107,90,0.18)' }}/>
+      <div className="relative z-10 flex flex-col items-center gap-8" style={{ maxWidth:360, width:'100%', padding:'0 24px' }}>
+        <div className="text-center">
+          <div className="font-bold text-[32px] tracking-tight mb-1" style={{ fontFamily:'Sora', color:'var(--jade)' }}>NEXUS</div>
+          <div className="text-[13px]" style={{ color:'var(--text-2)' }}>Control de proyectos personales</div>
+        </div>
+        <div className="w-full p-8 rounded-2xl flex flex-col gap-6" style={{ background:'rgba(255,255,255,0.03)', border:'1px solid var(--line-strong)', backdropFilter:'blur(12px)' }}>
+          <div className="text-center">
+            <div className="font-semibold text-[17px] mb-1" style={{ fontFamily:'Sora' }}>Iniciar sesión</div>
+            <div className="text-[12px]" style={{ color:'var(--text-2)' }}>Usa tu cuenta de Google para acceder</div>
+          </div>
+          <button
+            onClick={handleGoogle}
+            disabled={busy}
+            className="flex items-center justify-center gap-3 w-full py-3 rounded-xl font-medium text-[14px] transition-all"
+            style={{ background:'rgba(255,255,255,0.06)', border:'1px solid var(--line-strong)', color:'var(--text-0)', opacity: busy ? 0.6 : 1 }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            {busy ? 'Redirigiendo…' : 'Continuar con Google'}
+          </button>
+          <div className="text-center text-[11px]" style={{ color:'var(--text-2)' }}>
+            Solo cuentas autorizadas tienen acceso a la plataforma.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
+// ─── ACCESS DENIED SCREEN ────────────────────────────────────
+function AccessDeniedScreen() {
+  const { user, signOut } = useAuth();
+  return (
+    <div className="app-bg w-screen h-screen flex items-center justify-center relative overflow-hidden">
+      <div className="blur-spot" style={{ width:600,height:600,top:-200,left:-200,background:'rgba(255,77,109,0.06)' }}/>
+      <div className="relative z-10 flex flex-col items-center gap-6 text-center" style={{ maxWidth:380, padding:'0 24px' }}>
+        <div style={{ width:64,height:64,borderRadius:'50%',background:'rgba(255,77,109,0.10)',border:'1px solid rgba(255,77,109,0.30)',display:'flex',alignItems:'center',justifyContent:'center' }}>
+          <I name="shield-off" size={28} color="#FF4D6D"/>
+        </div>
+        <div>
+          <div className="font-bold text-[20px] mb-2" style={{ fontFamily:'Sora' }}>Acceso restringido</div>
+          <div className="text-[13px] leading-relaxed" style={{ color:'var(--text-2)' }}>
+            Tu cuenta <span style={{ color:'var(--text-1)' }}>{user?.email}</span> está pendiente de aprobación.<br/>Contacta al administrador para que te asigne un rol.
+          </div>
+        </div>
+        <button className="btn btn-ghost flex items-center gap-2" onClick={signOut}>
+          <I name="log-out" size={14}/>Cerrar sesión
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── SETTINGS VIEW ───────────────────────────────────────────
+function SettingsView() {
+  const { user, isAdmin, signOut } = useAuth();
+  const [saved, setSaved] = useState(false);
+  const [darkMode, setDarkMode] = useState(true);
+  const [appUsers, setAppUsers] = useState<any[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [roleChanging, setRoleChanging] = useState<string | null>(null);
+
+  function toggleTheme() {
+    const next = !darkMode;
+    setDarkMode(next);
+    document.body.classList.toggle('light', !next);
+  }
+
   function handleSave() { setSaved(true); setTimeout(()=>setSaved(false), 2000); }
+
+  async function fetchUsers() {
+    setUsersLoading(true);
+    const { data, error } = await supabase.rpc('get_all_users');
+    if (!error && data) setAppUsers(data);
+    setUsersLoading(false);
+  }
+
+  useEffect(() => { if (isAdmin) fetchUsers(); }, [isAdmin]);
+
+  async function handleRoleChange(email: string, newRole: string) {
+    setRoleChanging(email);
+    await supabase.rpc('set_user_role', { p_target_email: email, p_new_role: newRole });
+    await fetchUsers();
+    setRoleChanging(null);
+  }
+
+  const ROLE_LABELS: Record<string, string> = {
+    none: 'Sin Permisos', viewer: 'Lectura', editor: 'Escritura', admin: 'Administrador', superadmin: 'SuperAdmin'
+  };
+  const ROLE_COLORS: Record<string, string> = {
+    none: '#7A7E8F', viewer: '#4D9EFF', editor: '#F5A623', admin: '#00D68F', superadmin: '#A88CFF'
+  };
+
+  const displayName = user?.display_name || user?.email?.split('@')[0] || 'Usuario';
+  const initials = displayName.split(' ').map((w: string)=>w[0]).join('').slice(0,2).toUpperCase();
 
   return (
     <div className="p-4 md:p-8 space-y-6 max-w-2xl">
       <div><h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily:'Sora' }}>Configuración</h2><p className="text-[12px] mt-0.5" style={{ color:'var(--text-2)' }}>Ajustes de tu cuenta y preferencias</p></div>
 
+      {/* Perfil */}
       <Card className="p-5 md:p-6">
         <div className="eyebrow mb-4">Perfil</div>
-        <div className="flex items-center gap-4 mb-5">
-          <Avatar name="MC" size={48}/>
-          <div><div className="font-medium text-[15px]">{name}</div><div className="text-[12px]" style={{ color:'var(--text-2)' }}>Project Lead · NEXUS</div></div>
+        <div className="flex items-center gap-4 mb-4">
+          {user?.avatar_url
+            ? <img src={user.avatar_url} alt="avatar" style={{ width:48,height:48,borderRadius:'50%',objectFit:'cover',border:'2px solid var(--line-strong)' }}/>
+            : <Avatar name={initials} size={48}/>
+          }
+          <div>
+            <div className="font-medium text-[15px]">{displayName}</div>
+            <div className="text-[12px]" style={{ color:'var(--text-2)' }}>{user?.email}</div>
+            <div className="mt-1">
+              <span className="pill text-[10px]" style={{ background:`${ROLE_COLORS[user?.role||'none']}18`, color:ROLE_COLORS[user?.role||'none'], borderColor:`${ROLE_COLORS[user?.role||'none']}40` }}>
+                {ROLE_LABELS[user?.role||'none']}
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="space-y-4">
-          <div><label className="label">Nombre</label><input className="input" value={name} onChange={e=>setName(e.target.value)}/></div>
-          <div><label className="label">Moneda por defecto</label><select className="select"><option>CLP · Peso chileno</option><option>USD · Dólar</option><option>EUR · Euro</option></select></div>
+        <div>
+          <label className="label">Moneda por defecto</label>
+          <select className="select"><option>CLP · Peso chileno</option><option>USD · Dólar</option><option>EUR · Euro</option></select>
         </div>
       </Card>
 
+      {/* Tema */}
       <div>
-  <label className="label">Tema</label>
-  <button onClick={toggleTheme} className="flex items-center gap-3 p-3 rounded-lg w-full transition-all" style={{ background:'rgba(255,255,255,0.03)', border:'1px solid var(--line-strong)' }}>
-    <I name={darkMode ? 'moon' : 'sun'} size={16} color={darkMode ? '#4D9EFF' : '#F5A623'}/>
-    <span className="flex-1 text-left text-[13px]">{darkMode ? 'Modo oscuro' : 'Modo claro'}</span>
-    <div className="rounded-full transition-all" style={{ width:36, height:20, background:darkMode?'var(--jade)':'rgba(255,255,255,0.1)', border:'1px solid var(--line-strong)', position:'relative' }}>
-      <div style={{ position:'absolute', top:2, left:darkMode?18:2, width:14, height:14, borderRadius:'50%', background:'white', transition:'left 200ms' }}/>
-    </div>
-  </button>
-</div>
+        <label className="label">Tema</label>
+        <button onClick={toggleTheme} className="flex items-center gap-3 p-3 rounded-lg w-full transition-all" style={{ background:'rgba(255,255,255,0.03)', border:'1px solid var(--line-strong)' }}>
+          <I name={darkMode ? 'moon' : 'sun'} size={16} color={darkMode ? '#4D9EFF' : '#F5A623'}/>
+          <span className="flex-1 text-left text-[13px]">{darkMode ? 'Modo oscuro' : 'Modo claro'}</span>
+          <div className="rounded-full transition-all" style={{ width:36,height:20,background:darkMode?'var(--jade)':'rgba(255,255,255,0.1)',border:'1px solid var(--line-strong)',position:'relative' }}>
+            <div style={{ position:'absolute',top:2,left:darkMode?18:2,width:14,height:14,borderRadius:'50%',background:'white',transition:'left 200ms' }}/>
+          </div>
+        </button>
+      </div>
 
+      {/* Admin: Usuarios y Permisos */}
+      {isAdmin && (
+        <Card className="p-5 md:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="eyebrow">Usuarios y Permisos</div>
+            <button className="btn btn-ghost !h-7 !px-2.5 !text-[11px] flex items-center gap-1" onClick={fetchUsers}>
+              <I name="refresh-cw" size={11}/>Actualizar
+            </button>
+          </div>
+          {usersLoading ? (
+            <div className="text-center py-6 text-[12px]" style={{ color:'var(--text-2)' }}>Cargando usuarios…</div>
+          ) : appUsers.length === 0 ? (
+            <div className="text-center py-6 text-[12px]" style={{ color:'var(--text-2)' }}>No hay usuarios registrados aún.</div>
+          ) : (
+            <div className="space-y-2">
+              {appUsers.map(u => (
+                <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl" style={{ background:'rgba(255,255,255,0.02)', border:'1px solid var(--line)' }}>
+                  {u.avatar_url
+                    ? <img src={u.avatar_url} alt="" style={{ width:32,height:32,borderRadius:'50%',objectFit:'cover',flexShrink:0 }}/>
+                    : <Avatar name={(u.display_name||u.email||'?').split(' ').map((w:string)=>w[0]).join('').slice(0,2).toUpperCase()} size={32}/>
+                  }
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-[13px] truncate">{u.display_name || u.email}</div>
+                    <div className="text-[11px] truncate" style={{ color:'var(--text-2)' }}>{u.email}</div>
+                  </div>
+                  {u.email === 'marcelo.moyav@gmail.com' ? (
+                    <span className="pill text-[10px]" style={{ background:'rgba(168,140,255,0.15)', color:'#A88CFF', borderColor:'rgba(168,140,255,0.35)' }}>SuperAdmin</span>
+                  ) : (
+                    <select
+                      value={u.role}
+                      disabled={roleChanging === u.email}
+                      onChange={e => handleRoleChange(u.email, e.target.value)}
+                      className="select !h-7 !text-[11px] !py-0 !w-auto"
+                      style={{ minWidth:120 }}
+                    >
+                      <option value="none">Sin Permisos</option>
+                      <option value="viewer">Lectura</option>
+                      <option value="editor">Escritura</option>
+                      <option value="admin">Administrador</option>
+                    </select>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-3 text-[11px]" style={{ color:'var(--text-2)' }}>
+            Los nuevos usuarios necesitan que les asignes un rol para poder acceder a NEXUS.
+          </div>
+        </Card>
+      )}
+
+      {/* Base de datos */}
       <Card className="p-5 md:p-6">
         <div className="eyebrow mb-4">Base de datos</div>
         <div className="space-y-3">
@@ -2448,6 +2613,7 @@ function toggleTheme() {
         </div>
       </Card>
 
+      {/* Acerca de */}
       <Card className="p-5 md:p-6">
         <div className="eyebrow mb-4">Acerca de NEXUS</div>
         <div className="space-y-2 text-[13px]" style={{ color:'var(--text-1)' }}>
@@ -2457,7 +2623,10 @@ function toggleTheme() {
         </div>
       </Card>
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        <button className="btn btn-ghost flex items-center gap-2 !text-[12px]" onClick={signOut} style={{ color:'#FF4D6D' }}>
+          <I name="log-out" size={13}/>Cerrar sesión
+        </button>
         <button className="btn btn-primary" onClick={handleSave}><I name={saved?'check':'save'} size={14}/>{saved?'¡Guardado!':'Guardar cambios'}</button>
       </div>
     </div>
@@ -2503,8 +2672,9 @@ function NotificationsPanel({ open, onClose, alerts, onNavigate }: { open: boole
   );
 }
 
-// ─── MAIN APP ─────────────────────────────────────────────────
-export default function App() {
+// ─── MAIN APP SHELL ───────────────────────────────────────────
+function AppShell() {
+  const { user, loading: authLoading, isAdmin } = useAuth();
   const [projects, setProjects] = useState<any[]>([]);
   const [quotes, setQuotes] = useState<any[]>([]);
   const [hitos, setHitos] = useState<any[]>([]);
@@ -2514,6 +2684,15 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  // Auth guards
+  if (authLoading) return (
+    <div className="app-bg w-screen h-screen flex items-center justify-center">
+      <div className="text-center"><div className="font-bold text-[20px] mb-2" style={{ fontFamily:'Sora', color:'var(--jade)' }}>NEXUS</div><div className="text-[13px]" style={{ color:'var(--text-2)' }}>Verificando sesión…</div></div>
+    </div>
+  );
+  if (!user) return <LoginScreen/>;
+  if (user.role === 'none') return <AccessDeniedScreen/>;
 
   async function fetchProjects() {
     const { data, error } = await supabase.from('proyectos').select('*').order('created_at');
@@ -2657,6 +2836,10 @@ export default function App() {
   const titles: Record<string,string> = { dashboard:'Dashboard', projects:'Proyectos', quotes:'Cotizaciones', inputs:'Insumos', returns:'Retornos', settings:'Configuración', project_detail: currentProject?.name||'Detalle' };
   const subtitles: Record<string,string> = { dashboard:`${projects.length} proyectos activos`, projects:'Administra todas tus iniciativas', quotes:'Gestiona cotizaciones de proveedores', inputs:'Catálogo de materiales y servicios', returns:'Mide el retorno de tus proyectos', settings:'Ajustes y preferencias' };
 
+  const visibleNav = isAdmin ? NAV : NAV.filter(n => n.id !== 'settings');
+  // Redirect non-admins away from settings
+  const safeRoute = (route.view === 'settings' && !isAdmin) ? { view: 'dashboard' } : route;
+
   if (loading) return (
     <div className="app-bg w-screen h-screen flex items-center justify-center">
       <div className="text-center"><div className="font-bold text-[20px] mb-2" style={{ fontFamily:'Sora', color:'var(--jade)' }}>NEXUS</div><div className="text-[13px]" style={{ color:'var(--text-2)' }}>Cargando...</div></div>
@@ -2668,24 +2851,33 @@ export default function App() {
       <div className="blur-spot" style={{ width:600,height:600,top:-200,left:-200,background:'rgba(0,214,143,0.10)' }}/>
       <div className="blur-spot" style={{ width:500,height:500,bottom:-180,right:-120,background:'rgba(31,107,90,0.18)' }}/>
 
-      <Sidebar active={activeNav} onChange={onNavigate} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} projects={projects} mobileOpen={mobileOpen} onMobileClose={()=>setMobileOpen(false)}/>
+      <Sidebar active={activeNav} onChange={onNavigate} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} projects={projects} mobileOpen={mobileOpen} onMobileClose={()=>setMobileOpen(false)} navItems={visibleNav}/>
 
       <main className="flex-1 flex flex-col relative" style={{ minWidth:0 }}>
-        <TopBar title={titles[route.view]||''} subtitle={subtitles[route.view]} onMenuClick={()=>setMobileOpen(true)} searchText={searchText} onSearchChange={setSearchText} onBellClick={()=>setNotificationsOpen(true)} hasNotifications={alerts.length > 0}/>
+        <TopBar title={titles[safeRoute.view]||''} subtitle={subtitles[safeRoute.view]} onMenuClick={()=>setMobileOpen(true)} searchText={searchText} onSearchChange={setSearchText} onBellClick={()=>setNotificationsOpen(true)} hasNotifications={alerts.length > 0}/>
         <div className="flex-1 overflow-y-auto relative">
           <div className="fade-in">
-            {route.view==='dashboard' && <Dashboard projects={filteredProjects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})}/>}
-            {route.view==='projects' && <ProjectsView projects={filteredProjects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})} onRefresh={loadData}/>}
-            {route.view==='project_detail' && currentProject && <ProjectDetail project={currentProject} onBack={()=>setRoute({view:'projects'})} onRefresh={loadData}/>}
-            {route.view==='quotes' && <QuotesView projects={projects} searchText={searchText}/>}
-            {route.view==='inputs' && <InputsView projects={projects} searchText={searchText}/>}
-            {route.view==='returns' && <ReturnsView projects={projects} onRefresh={loadData}/>}
-            {route.view==='settings' && <SettingsView/>}
+            {safeRoute.view==='dashboard' && <Dashboard projects={filteredProjects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})}/>}
+            {safeRoute.view==='projects' && <ProjectsView projects={filteredProjects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})} onRefresh={loadData}/>}
+            {safeRoute.view==='project_detail' && currentProject && <ProjectDetail project={currentProject} onBack={()=>setRoute({view:'projects'})} onRefresh={loadData}/>}
+            {safeRoute.view==='quotes' && <QuotesView projects={projects} searchText={searchText}/>}
+            {safeRoute.view==='inputs' && <InputsView projects={projects} searchText={searchText}/>}
+            {safeRoute.view==='returns' && <ReturnsView projects={projects} onRefresh={loadData}/>}
+            {safeRoute.view==='settings' && isAdmin && <SettingsView/>}
           </div>
         </div>
       </main>
 
       <NotificationsPanel open={notificationsOpen} onClose={()=>setNotificationsOpen(false)} alerts={alerts} onNavigate={onNavigate}/>
     </div>
+  );
+}
+
+// ─── ROOT EXPORT ──────────────────────────────────────────────
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell/>
+    </AuthProvider>
   );
 }
