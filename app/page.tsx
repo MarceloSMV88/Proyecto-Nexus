@@ -2685,15 +2685,6 @@ function AppShell() {
   const [searchText, setSearchText] = useState('');
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
-  // Auth guards
-  if (authLoading) return (
-    <div className="app-bg w-screen h-screen flex items-center justify-center">
-      <div className="text-center"><div className="font-bold text-[20px] mb-2" style={{ fontFamily:'Sora', color:'var(--jade)' }}>NEXUS</div><div className="text-[13px]" style={{ color:'var(--text-2)' }}>Verificando sesión…</div></div>
-    </div>
-  );
-  if (!user) return <LoginScreen/>;
-  if (user.role === 'none') return <AccessDeniedScreen/>;
-
   async function fetchProjects() {
     const { data, error } = await supabase.from('proyectos').select('*').order('created_at');
     if (!error && data) setProjects(data);
@@ -2839,6 +2830,15 @@ function AppShell() {
   const visibleNav = isAdmin ? NAV : NAV.filter(n => n.id !== 'settings');
   // Redirect non-admins away from settings
   const safeRoute = (route.view === 'settings' && !isAdmin) ? { view: 'dashboard' } : route;
+
+  // Auth guards — after all hooks
+  if (authLoading) return (
+    <div className="app-bg w-screen h-screen flex items-center justify-center">
+      <div className="text-center"><div className="font-bold text-[20px] mb-2" style={{ fontFamily:'Sora', color:'var(--jade)' }}>NEXUS</div><div className="text-[13px]" style={{ color:'var(--text-2)' }}>Verificando sesión…</div></div>
+    </div>
+  );
+  if (!user) return <LoginScreen/>;
+  if (user.role === 'none') return <AccessDeniedScreen/>;
 
   if (loading) return (
     <div className="app-bg w-screen h-screen flex items-center justify-center">
