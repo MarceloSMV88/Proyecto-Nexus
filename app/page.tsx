@@ -16,6 +16,7 @@ const SCOPE_META: Record<string, { icon: string; color: string; bg: string; bord
 };
 
 const STATUS_META: Record<string, { color: string; cls: string; dot: string }> = {
+  'Por hacer':   { color: '#A88CFF', cls: 'pill-violet', dot: '' },
   'Planificado': { color: '#4D9EFF', cls: 'pill-blue',  dot: 'dot-blue' },
   'En curso':    { color: '#00D68F', cls: 'pill-jade',  dot: 'dot-jade' },
   'En revisión': { color: '#F5A623', cls: 'pill-amber', dot: 'dot-amber' },
@@ -560,7 +561,7 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
 }
 
 // ─── PROJECT ACTION DROPDOWN ─────────────────────────────────
-function ProjectActionDropdown({ project, onClose, onOpenDetail, onRefresh }: { project: any; onClose: () => void; onOpenDetail: () => void; onRefresh: () => void }) {
+function ProjectActionDropdown({ project, onClose, onOpenDetail, onRefresh, position }: { project: any; onClose: () => void; onOpenDetail: () => void; onRefresh: () => void; position?: {x:number; y:number} }) {
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -597,21 +598,29 @@ function ProjectActionDropdown({ project, onClose, onOpenDetail, onRefresh }: { 
     }
   }
 
+  const posStyle: React.CSSProperties = position
+    ? { position: 'fixed', top: position.y + 4, left: Math.min(position.x - 160, window.innerWidth - 170), right: 'auto' }
+    : { position: 'absolute', right: 8, top: 40 };
+
   return (
-    <div ref={ref} className="absolute right-2 top-10 z-30 rounded-xl p-1.5 shadow-2xl flex flex-col min-w-[150px] border border-white/10" style={{ background: '#0F0F18', backdropFilter: 'blur(16px)' }} onClick={e => e.stopPropagation()}>
+    <div ref={ref} className="z-[999] rounded-xl p-1.5 shadow-2xl flex flex-col min-w-[160px] border border-white/10" style={{ ...posStyle, background: '#0F0F18', backdropFilter: 'blur(16px)' }} onClick={e => e.stopPropagation()}>
       <button className="flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] rounded-lg text-left hover:bg-white/5 transition-all text-white w-full" onClick={onOpenDetail}>
         <I name="eye" size={13} color="var(--text-2)" />Ver detalles
       </button>
-      
+
       <div className="hairline-t my-1" />
-      
+
       <div className="px-2.5 py-1 text-[9px] eyebrow">Cambiar estado</div>
-      {['Planificado', 'En curso', 'En revisión', 'Completado'].map(st => (
-        <button key={st} disabled={loading} className={`flex items-center gap-2 px-2.5 py-1.5 text-[11px] rounded-lg text-left hover:bg-white/5 transition-all w-full ${project.status === st ? 'text-[#00D68F]' : 'text-gray-400'}`} onClick={() => updateStatus(st)}>
-          <span className={`w-1.5 h-1.5 rounded-full ${project.status === st ? 'bg-[#00D68F]' : 'bg-gray-600'}`} />
-          {st}
-        </button>
-      ))}
+      {(['Por hacer', 'Planificado', 'En curso', 'Pausado', 'Bloqueado', 'Completado'] as const).map(st => {
+        const active = project.status === st;
+        const c = STATUS_META[st]?.color || '#7A7E8F';
+        return (
+          <button key={st} disabled={loading} className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] rounded-lg text-left hover:bg-white/5 transition-all w-full" style={{ color: active ? c : 'var(--text-2)' }} onClick={() => updateStatus(st)}>
+            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: active ? c : '#374151' }}/>
+            {st}
+          </button>
+        );
+      })}
 
       <div className="hairline-t my-1" />
 
@@ -623,10 +632,45 @@ function ProjectActionDropdown({ project, onClose, onOpenDetail, onRefresh }: { 
 }
 
 // ─── PROJECTS VIEW ───────────────────────────────────────────
+const STATUS_SORT_ORDER: Record<string, number> = {
+  'En curso': 0, 'Planificado': 1, 'Por hacer': 2, 'Bloqueado': 3, 'Pausado': 4, 'En revisión': 5, 'Completado': 6,
+};
+
 function ProjectsView({ projects, onOpenProject, onRefresh }: { projects: any[]; onOpenProject: (id:string)=>void; onRefresh: ()=>void }) {
   const [view, setView] = useState<'list'|'kanban'>('list');
   const [newOpen, setNewOpen] = useState(false);
   const [menuProjectId, setMenuProjectId] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{x:number; y:number}>({x:0, y:0});
+  const [sortCol, setSortCol] = useState('status');
+  const [sortDir, setSortDir] = useState<'asc'|'desc'>('asc');
+
+  function handleSort(col: string) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  }
+
+  const sorted = useMemo(() => {
+    return [...projects].sort((a, b) => {
+      let av: any, bv: any;
+      if (sortCol === 'status') { av = STATUS_SORT_ORDER[a.status] ?? 99; bv = STATUS_SORT_ORDER[b.status] ?? 99; }
+      else if (sortCol === 'name') { av = a.name?.toLowerCase(); bv = b.name?.toLowerCase(); }
+      else if (sortCol === 'scope') { av = a.scope?.toLowerCase(); bv = b.scope?.toLowerCase(); }
+      else if (sortCol === 'budget') { av = a.budget || 0; bv = b.budget || 0; }
+      else if (sortCol === 'executed') { av = a.executed || 0; bv = b.executed || 0; }
+      else if (sortCol === 'progress') { av = a.progress || 0; bv = b.progress || 0; }
+      else return 0;
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [projects, sortCol, sortDir]);
+
+  function SortIcon({ col }: { col: string }) {
+    if (sortCol !== col) return <I name="chevrons-up-down" size={11} color="var(--text-3)"/>;
+    return <I name={sortDir === 'asc' ? 'chevron-up' : 'chevron-down'} size={11} color="var(--jade)"/>;
+  }
+
+  const menuProject = menuProjectId ? projects.find(p => p.id === menuProjectId) : null;
 
   return (
     <div className="p-4 md:p-8 space-y-6">
@@ -648,9 +692,25 @@ function ProjectsView({ projects, onOpenProject, onRefresh }: { projects: any[];
         <div className="overflow-x-auto">
           <Card className="overflow-hidden min-w-full md:min-w-[700px]">
             <table className="tbl">
-              <thead><tr><th>Proyecto</th><th style={{width:120}}>Ámbito</th><th style={{width:120}}>Presupuesto</th><th style={{width:120}}>Ejecutado</th><th style={{width:180}}>Avance</th><th style={{width:100}}>Estado</th><th style={{width:40}}></th></tr></thead>
+              <thead>
+                <tr>
+                  {[
+                    { col:'name',     label:'Proyecto',     style:{} },
+                    { col:'scope',    label:'Ámbito',       style:{width:120} },
+                    { col:'budget',   label:'Presupuesto',  style:{width:120} },
+                    { col:'executed', label:'Ejecutado',    style:{width:120} },
+                    { col:'progress', label:'Avance',       style:{width:180} },
+                    { col:'status',   label:'Estado',       style:{width:110} },
+                  ].map(({ col, label, style }) => (
+                    <th key={col} style={style} className="cursor-pointer select-none" onClick={() => handleSort(col)}>
+                      <div className="flex items-center gap-1">{label}<SortIcon col={col}/></div>
+                    </th>
+                  ))}
+                  <th style={{width:40}}/>
+                </tr>
+              </thead>
               <tbody>
-                {projects.map((p:any) => {
+                {sorted.map((p:any) => {
                   const m = scopeMeta(p.scope);
                   return (
                     <tr key={p.id} onClick={()=>onOpenProject(p.id)} style={{ cursor:'pointer' }}>
@@ -660,11 +720,8 @@ function ProjectsView({ projects, onOpenProject, onRefresh }: { projects: any[];
                       <td className="font-mono" style={{ color:p.health==='danger'?'#FFB0BF':'var(--text-0)' }}>{fmtShort(p.executed||0)}</td>
                       <td><div className="flex items-center gap-2"><div className="flex-1"><ProgressBar value={p.progress||0} tone={p.health==='danger'?'danger':'ok'}/></div><span className="font-mono text-[11px] w-8 text-right">{p.progress||0}%</span></div></td>
                       <td><StatusPill status={p.status||'En curso'}/></td>
-                      <td className="relative overflow-visible">
-                        <button className="btn btn-ghost !w-8 !p-0" onClick={(e)=>{ e.stopPropagation(); setMenuProjectId(menuProjectId === p.id ? null : p.id); }}><I name="more-horizontal" size={14}/></button>
-                        {menuProjectId === p.id && (
-                          <ProjectActionDropdown project={p} onClose={()=>setMenuProjectId(null)} onOpenDetail={()=>{ onOpenProject(p.id); setMenuProjectId(null); }} onRefresh={onRefresh}/>
-                        )}
+                      <td>
+                        <button className="btn btn-ghost !w-8 !p-0" onClick={(e)=>{ e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setMenuPos({x:r.right, y:r.bottom}); setMenuProjectId(menuProjectId===p.id?null:p.id); }}><I name="more-horizontal" size={14}/></button>
                       </td>
                     </tr>
                   );
@@ -676,12 +733,12 @@ function ProjectsView({ projects, onOpenProject, onRefresh }: { projects: any[];
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-          {['Planificado','En curso','En revisión','Completado'].map(col => {
+          {(['Por hacer','Planificado','En curso','Completado'] as const).map(col => {
             const items = projects.filter((p:any)=>p.status===col);
             const meta = STATUS_META[col];
             return (
               <div key={col} className="kanban-col">
-                <div className="flex items-center gap-2 mb-3"><span className={'w-2 h-2 rounded-full '+(meta?.dot||'')} style={{ background:meta?.color }}/><span className="font-semibold text-[12px]" style={{ fontFamily:'Sora' }}>{col}</span><span className="font-mono text-[11px]" style={{ color:'var(--text-2)' }}>{items.length}</span></div>
+                <div className="flex items-center gap-2 mb-3"><span className="w-2 h-2 rounded-full" style={{ background:meta?.color }}/><span className="font-semibold text-[12px]" style={{ fontFamily:'Sora' }}>{col}</span><span className="font-mono text-[11px]" style={{ color:'var(--text-2)' }}>{items.length}</span></div>
                 {items.map((p:any)=>(
                   <div key={p.id} className="glass rounded-xl p-3 mb-3 card-hover cursor-pointer" onClick={()=>onOpenProject(p.id)}>
                     <div className="font-semibold text-[13px] mb-2" style={{ fontFamily:'Sora' }}>{p.name}</div>
@@ -695,7 +752,19 @@ function ProjectsView({ projects, onOpenProject, onRefresh }: { projects: any[];
           })}
         </div>
       )}
+
       <NewProjectPanel open={newOpen} onClose={()=>{ setNewOpen(false); onRefresh(); }}/>
+
+      {/* Dropdown flotante fuera del overflow-hidden */}
+      {menuProject && (
+        <ProjectActionDropdown
+          project={menuProject}
+          position={menuPos}
+          onClose={()=>setMenuProjectId(null)}
+          onOpenDetail={()=>{ onOpenProject(menuProject.id); setMenuProjectId(null); }}
+          onRefresh={onRefresh}
+        />
+      )}
     </div>
   );
 }
@@ -729,7 +798,7 @@ function NewProjectPanel({ open, onClose }: { open:boolean; onClose:()=>void }) 
           </div>
         </div>
         <div><label className="label">Presupuesto (CLP)</label><input className="input" placeholder="0" value={form.budget} onChange={e=>setForm({...form,budget:e.target.value})}/></div>
-        <div><label className="label">Estado</label><select className="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{Object.keys(STATUS_META).map(s=><option key={s}>{s}</option>)}</select></div>
+        <div><label className="label">Estado</label><select className="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{(['Por hacer','Planificado','En curso','Pausado','Bloqueado','Completado']).map(s=><option key={s}>{s}</option>)}</select></div>
       </div>
       <div className="hairline-t mt-8 pt-5 flex items-center justify-between">
         <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
@@ -771,7 +840,7 @@ function TabResumen({ project, form, setForm, editing, progress }: any) {
             <div className="md:col-span-2"><label className="label">Descripción</label><textarea className="textarea" value={form.description||''} onChange={e=>setForm({...form,description:e.target.value})}/></div>
             <div><label className="label">Presupuesto (CLP)</label><input className="input" type="number" value={form.budget||0} onChange={e=>setForm({...form,budget:e.target.value})}/></div>
             <div><label className="label">Ejecutado (CLP)</label><input className="input" type="number" value={form.executed||0} onChange={e=>setForm({...form,executed:e.target.value})}/></div>
-            <div><label className="label">Estado</label><select className="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{Object.keys(STATUS_META).map(s=><option key={s}>{s}</option>)}</select></div>
+            <div><label className="label">Estado</label><select className="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{(['Por hacer','Planificado','En curso','Pausado','Bloqueado','Completado']).map(s=><option key={s}>{s}</option>)}</select></div>
             <div><label className="label">Ámbito</label><select className="select" value={form.scope} onChange={e=>setForm({...form,scope:e.target.value})}>{Object.keys(SCOPE_META).map(s=><option key={s}>{s}</option>)}</select></div>
             <div><label className="label">Fecha inicio</label><input className="input" type="date" value={form.start_date||''} onChange={e=>setForm({...form,start_date:e.target.value})}/></div>
             <div><label className="label">Fecha fin</label><input className="input" type="date" value={form.end_date||''} onChange={e=>setForm({...form,end_date:e.target.value})}/></div>
