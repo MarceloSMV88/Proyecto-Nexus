@@ -21,6 +21,10 @@
   --blue-glow: rgba(77,158,255,0.30);
   --teal: #1F3B47;
   --emerald-deep: #0B2A22;
+  /* Accent text colors — overridden in light mode */
+  --c-pos: #6FFFCB;
+  --c-warn: #FFD08A;
+  --c-neg: #FFB0BF;
 }
 
 html, body, #__next { height: 100%; }
@@ -199,43 +203,90 @@ h1, h2, h3, h4 { font-family: 'Sora', sans-serif; letter-spacing: -0.02em; font-
 
 /* Light theme */
 body.light {
-  --bg-0: #F4F5F7;
+  --bg-0: #F2F4F8;
   --bg-1: #FFFFFF;
-  --bg-2: #ECEEF2;
-  --bg-3: #E0E2E8;
+  --bg-2: #ECEEF4;
+  --bg-3: #E0E3EC;
   --line: rgba(0,0,0,0.08);
-  --line-strong: rgba(0,0,0,0.14);
-  --text-0: #111318;
-  --text-1: #3A3D4A;
-  --text-2: #6B6F7E;
-  --text-3: #9A9DAB;
+  --line-strong: rgba(0,0,0,0.15);
+  --text-0: #0E1117;
+  --text-1: #383C4A;
+  --text-2: #646878;
+  --text-3: #969AAA;
+  /* Accent overrides — darker, readable on white */
+  --jade: #006B45;
+  --jade-glow: rgba(0,107,69,0.15);
+  --amber: #8A4F00;
+  --amber-glow: rgba(138,79,0,0.15);
+  --red: #B91C3A;
+  --red-glow: rgba(185,28,58,0.15);
+  --blue: #1260B5;
+  --blue-glow: rgba(18,96,181,0.15);
+  /* Accent text colors for light mode */
+  --c-pos: #006B45;
+  --c-warn: #8A4F00;
+  --c-neg: #B91C3A;
   background: var(--bg-0);
   color: var(--text-0);
 }
 body.light .app-bg {
   background:
-    radial-gradient(1200px 700px at 8% -10%, rgba(77,158,255,0.08), transparent 60%),
-    radial-gradient(900px 600px at 95% 15%, rgba(0,214,143,0.06), transparent 55%),
+    radial-gradient(1400px 800px at 10% -5%, rgba(0,107,69,0.06), transparent 55%),
+    radial-gradient(1000px 600px at 92% 10%, rgba(18,96,181,0.05), transparent 50%),
+    radial-gradient(1200px 700px at 50% 100%, rgba(138,79,0,0.04), transparent 55%),
     var(--bg-0);
 }
 body.light .glass {
-  background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,255,255,0.7));
-  border-color: var(--line);
+  background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.75));
+  border-color: rgba(0,0,0,0.09);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
 }
 body.light .glass-strong {
-  background: rgba(255,255,255,0.95);
-  border-color: var(--line-strong);
+  background: rgba(255,255,255,0.97);
+  border-color: rgba(0,0,0,0.13);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.05);
 }
 body.light .input, body.light .select, body.light .textarea {
-  background: rgba(0,0,0,0.03);
-  border-color: var(--line-strong);
+  background: #FFFFFF;
+  border-color: rgba(0,0,0,0.16);
   color: var(--text-0);
+}
+body.light .input:focus, body.light .select:focus, body.light .textarea:focus {
+  border-color: #006B45;
+  box-shadow: 0 0 0 3px rgba(0,107,69,0.12);
 }
 body.light .btn {
-  background: rgba(0,0,0,0.04);
-  border-color: var(--line-strong);
+  background: rgba(0,0,0,0.05);
+  border-color: rgba(0,0,0,0.15);
   color: var(--text-0);
 }
-body.light .nav-item { color: var(--text-1); }
-body.light .tbl thead th { background: rgba(0,0,0,0.02); }
-body.light .tbl tbody tr:hover { background: rgba(0,0,0,0.02); }
+body.light .btn:hover { background: rgba(0,0,0,0.09); }
+body.light .btn-primary {
+  background: #006B45;
+  border-color: #005A38;
+  color: #FFFFFF;
+}
+body.light .btn-primary:hover { background: #005A38; }
+/* Pills */
+body.light .pill { background: rgba(0,0,0,0.06); color: var(--text-1); border-color: rgba(0,0,0,0.12); }
+body.light .pill-jade { background: rgba(0,107,69,0.10); color: #006B45; border-color: rgba(0,107,69,0.22); }
+body.light .pill-amber { background: rgba(138,79,0,0.10); color: #8A4F00; border-color: rgba(138,79,0,0.22); }
+body.light .pill-red { background: rgba(185,28,58,0.08); color: #B91C3A; border-color: rgba(185,28,58,0.20); }
+body.light .pill-blue { background: rgba(18,96,181,0.08); color: #1260B5; border-color: rgba(18,96,181,0.20); }
+body.light .pill-violet { background: rgba(109,40,217,0.08); color: #6D28D9; border-color: rgba(109,40,217,0.20); }
+/* Navigation */
+body.light .nav-item { color: var(--text-2); }
+body.light .nav-item.active { color: #006B45; }
+body.light .nav-item.active svg { color: #006B45; }
+/* Table */
+body.light .tbl thead th { background: rgba(0,0,0,0.025); color: var(--text-2); }
+body.light .tbl tbody tr:hover { background: rgba(0,107,69,0.03); }
+body.light .tbl tbody td { border-color: rgba(0,0,0,0.06); }
+/* Avatar */
+body.light .avatar { background: linear-gradient(135deg, #D0EDE0, #B8DEC8); color: #006B45; border-color: rgba(0,107,69,0.18); }
+/* Scrollbar */
+body.light ::-webkit-scrollbar-track { background: #ECEEF4; }
+body.light ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
+body.light ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+/* Card/tip */
+body.light .tip { background: rgba(255,255,255,0.95); border-color: rgba(0,0,0,0.12); }

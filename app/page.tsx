@@ -192,7 +192,7 @@ function Sidebar({ active, onChange, collapsed, onToggle, projects, mobileOpen, 
       {!collapsed && <div className="px-4 py-4 hairline-t">
         <div className="flex items-center justify-between mb-2">
           <span className="eyebrow !text-[10px]">Presupuesto Global</span>
-          <span className="font-mono text-[11px]" style={{ color: pct>100?'#FFB0BF':'var(--text-1)' }}>{pct.toFixed(0)}%</span>
+          <span className="font-mono text-[11px]" style={{ color: pct>100?'var(--c-neg)':'var(--text-1)' }}>{pct.toFixed(0)}%</span>
         </div>
         <ProgressBar value={pct} tone={pct>100?'danger':pct>80?'warn':'ok'}/>
         <div className="flex justify-between mt-2 font-mono text-[10.5px]" style={{ color:'var(--text-2)' }}><span>{fmtShort(totalExec)}</span><span>de {fmtShort(totalBudget)}</span></div>
@@ -274,8 +274,8 @@ function BottomNav({ active, onChange, navItems = NAV }: { active: string; onCha
 // ─── DASHBOARD ───────────────────────────────────────────────
 
 function AlertItem({ sev, icon, title, detail }: { sev:string; icon:string; title:string; detail:string }) {
-  const t = sev==='red'   ? { color:'#FFB0BF', bg:'rgba(255,77,109,0.10)',  border:'rgba(255,77,109,0.30)' }
-           : sev==='amber' ? { color:'#FFD08A', bg:'rgba(245,166,35,0.10)',  border:'rgba(245,166,35,0.30)' }
+  const t = sev==='red'   ? { color:'var(--c-neg)', bg:'rgba(255,77,109,0.10)',  border:'rgba(255,77,109,0.30)' }
+           : sev==='amber' ? { color:'var(--c-warn)', bg:'rgba(245,166,35,0.10)',  border:'rgba(245,166,35,0.30)' }
            :                 { color:'#B5D6FF', bg:'rgba(77,158,255,0.10)',  border:'rgba(77,158,255,0.30)' };
   return (
     <div className="flex gap-3 p-3 rounded-xl" style={{ background:'rgba(255,255,255,0.02)', border:'1px solid var(--line)' }}>
@@ -390,8 +390,8 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
   ], [scoped]);
 
   const MOOD_TONE: Record<string,{color:string;bg:string;border:string}> = {
-    jade:  {color:'#6FFFCB',bg:'rgba(0,214,143,0.07)',   border:'rgba(0,214,143,0.28)'},
-    amber: {color:'#FFD08A',bg:'rgba(245,166,35,0.07)',  border:'rgba(245,166,35,0.28)'},
+    jade:  {color:'var(--c-pos)',bg:'rgba(0,214,143,0.07)',   border:'rgba(0,214,143,0.28)'},
+    amber: {color:'var(--c-warn)',bg:'rgba(245,166,35,0.07)',  border:'rgba(245,166,35,0.28)'},
     blue:  {color:'#B5D6FF',bg:'rgba(77,158,255,0.07)',  border:'rgba(77,158,255,0.28)'},
     violet:{color:'#D5C2FF',bg:'rgba(168,140,255,0.07)',border:'rgba(168,140,255,0.28)'},
   };
@@ -439,7 +439,7 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
               {variation>0?'sobre plan':'bajo plan'}
             </span>
           </div>
-          <div className="mt-2 font-mono font-semibold" style={{ fontSize:26, color:variation>5?'#FFB0BF':variation>0?'#FFD08A':'#6FFFCB' }}>
+          <div className="mt-2 font-mono font-semibold" style={{ fontSize:26, color:variation>5?'var(--c-neg)':variation>0?'var(--c-warn)':'var(--c-pos)' }}>
             {variation>=0?'+':''}{vUp.toFixed(1)}<span className="text-lg opacity-70">%</span>
           </div>
           <div className="mt-1 text-[11px]" style={{ color:'var(--text-2)' }}>frente a presupuesto</div>
@@ -449,12 +449,12 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
           <div className="mt-2 md:mt-3 flex items-baseline gap-3">
             <div>
               <div className="text-[10px] mb-0.5" style={{ color:'var(--text-2)' }}>ROI financiero</div>
-              <div className="font-mono font-semibold" style={{ fontSize:20, color:avgROI>0?'#6FFFCB':'var(--text-1)' }}>{avgROI>0?`+${avgROI.toFixed(0)}%`:'—'}</div>
+              <div className="font-mono font-semibold" style={{ fontSize:20, color:avgROI>0?'var(--c-pos)':'var(--text-1)' }}>{avgROI>0?`+${avgROI.toFixed(0)}%`:'—'}</div>
             </div>
             <div className="self-stretch w-px" style={{ background:'var(--line)' }}/>
             <div>
               <div className="text-[10px] mb-0.5" style={{ color:'var(--text-2)' }}>Cualitativo</div>
-              <div className="font-mono font-semibold" style={{ fontSize:20, color:avgQual>=8?'#6FFFCB':avgQual>=5?'#FFD08A':'var(--text-1)' }}>{avgQual>0?`${avgQual.toFixed(1)}/10`:'—'}</div>
+              <div className="font-mono font-semibold" style={{ fontSize:20, color:avgQual>=8?'var(--c-pos)':avgQual>=5?'var(--c-warn)':'var(--text-1)' }}>{avgQual>0?`${avgQual.toFixed(1)}/10`:'—'}</div>
             </div>
           </div>
           <div className="mt-1.5 text-[10px]" style={{ color:'var(--text-2)' }}>{projWithROI.length} con ROI · {projWithQual.length} evaluados</div>
@@ -539,7 +539,7 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
                 <div className="mt-3">
                   <div className="flex items-baseline justify-between mb-1.5">
                     <span className="text-[11px]" style={{ color:'var(--text-2)' }}>Ejecución</span>
-                    <span className="font-mono text-[12px]" style={{ color:p.health==='danger'?'#FFB0BF':p.health==='warn'?'#FFD08A':'#6FFFCB' }}>{p.progress||0}%</span>
+                    <span className="font-mono text-[12px]" style={{ color:p.health==='danger'?'var(--c-neg)':p.health==='warn'?'var(--c-warn)':'var(--c-pos)' }}>{p.progress||0}%</span>
                   </div>
                   <ProgressBar value={p.progress||0} tone={p.health==='danger'?'danger':p.health==='warn'?'warn':'ok'}/>
                   <div className="flex justify-between mt-2 font-mono text-[11px]" style={{ color:'var(--text-2)' }}><span>{fmtShort(p.executed||0)}</span><span>de {fmtShort(p.budget||0)}</span></div>
@@ -549,7 +549,7 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
                     <I name={urgent?'alert-circle':'calendar'} size={12} color={urgent?'#F5A623':'var(--text-2)'}/>
                     <span className="text-[11px] truncate" style={{ color:'var(--text-1)' }}>{p.next_label||'Sin hitos'}</span>
                   </div>
-                  <span className="font-mono text-[11px] flex-shrink-0" style={{ color:urgent?'#FFD08A':'var(--text-2)' }}>
+                  <span className="font-mono text-[11px] flex-shrink-0" style={{ color:urgent?'var(--c-warn)':'var(--text-2)' }}>
                     {daysLeft!=null && daysLeft>=0 ? (daysLeft===0?'hoy':`en ${daysLeft}d`) : p.next_date?fmtDateShort(p.next_date):'—'}
                   </span>
                 </div>
@@ -745,7 +745,7 @@ function ProjectsView({ projects, onOpenProject, onRefresh }: { projects: any[];
                       <td><div className="flex items-center gap-3"><span className="rounded-md flex items-center justify-center" style={{ width:26,height:26,background:m.bg,border:`1px solid ${m.border}`,color:m.color }}><I name={m.icon} size={13}/></span><div><div className="font-medium">{p.name}</div><div className="text-[10px] font-mono" style={{ color:'var(--text-3)' }}>{p.code}</div></div></div></td>
                       <td><ScopePill scope={p.scope||'Personal'}/></td>
                       <td className="font-mono">{fmtShort(p.budget||0)}</td>
-                      <td className="font-mono" style={{ color:p.health==='danger'?'#FFB0BF':'var(--text-0)' }}>{fmtShort(p.executed||0)}</td>
+                      <td className="font-mono" style={{ color:p.health==='danger'?'var(--c-neg)':'var(--text-0)' }}>{fmtShort(p.executed||0)}</td>
                       <td><div className="flex items-center gap-2"><div className="flex-1"><ProgressBar value={p.progress||0} tone={p.health==='danger'?'danger':'ok'}/></div><span className="font-mono text-[11px] w-8 text-right">{p.progress||0}%</span></div></td>
                       <td><StatusPill status={p.status||'En curso'}/></td>
                       <td>
@@ -930,9 +930,9 @@ function TabPresupuesto({ project, onRefresh }: { project:any; onRefresh:()=>voi
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label:'Presupuesto total', value:fmtCLP(vals.budget),         color:'var(--text-0)' },
-          { label:'Ejecutado',         value:fmtCLP(vals.executed),        color:progress>=100?'#FFB0BF':progress>=80?'#FFD08A':'var(--text-0)' },
-          { label:'Disponible',        value:fmtCLP(Math.abs(remaining)), color:remaining<0?'#FFB0BF':'#6FFFCB' },
-          { label:'Ejecución',         value:`${progress}%`,               color:progress>=100?'#FFB0BF':progress>=80?'#FFD08A':'#6FFFCB' },
+          { label:'Ejecutado',         value:fmtCLP(vals.executed),        color:progress>=100?'var(--c-neg)':progress>=80?'var(--c-warn)':'var(--text-0)' },
+          { label:'Disponible',        value:fmtCLP(Math.abs(remaining)), color:remaining<0?'var(--c-neg)':'var(--c-pos)' },
+          { label:'Ejecución',         value:`${progress}%`,               color:progress>=100?'var(--c-neg)':progress>=80?'var(--c-warn)':'var(--c-pos)' },
         ].map(k=>(
           <Card key={k.label} className="p-4 md:p-5">
             <div className="eyebrow text-[10px]">{k.label}</div>
@@ -946,7 +946,7 @@ function TabPresupuesto({ project, onRefresh }: { project:any; onRefresh:()=>voi
         <ProgressBar value={progress} tone={progress>=100?'danger':progress>=80?'warn':'ok'} height={12}/>
         <div className="flex justify-between mt-2 font-mono text-[12px]" style={{ color:'var(--text-2)' }}>
           <span>{fmtCLP(vals.executed)} ejecutado</span>
-          <span className="font-semibold" style={{ color:progress>=100?'#FFB0BF':progress>=80?'#FFD08A':'var(--jade)' }}>{progress}%</span>
+          <span className="font-semibold" style={{ color:progress>=100?'var(--c-neg)':progress>=80?'var(--c-warn)':'var(--jade)' }}>{progress}%</span>
           <span>de {fmtCLP(vals.budget)}</span>
         </div>
       </Card>
@@ -1024,7 +1024,7 @@ function TabCotizaciones({ quotes, project, onRefresh }: { quotes:any[]; project
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-3">
           <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">Total cotizado</div><div className="font-mono font-semibold text-[18px] mt-1">{fmtCLP(total)}</div></Card>
-          <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">Adjudicado</div><div className="font-mono font-semibold text-[18px] mt-1" style={{ color:'#6FFFCB' }}>{fmtCLP(adjudicado)}</div></Card>
+          <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">Adjudicado</div><div className="font-mono font-semibold text-[18px] mt-1" style={{ color:'var(--c-pos)' }}>{fmtCLP(adjudicado)}</div></Card>
         </div>
         <div className="flex gap-2">
           <button className={`btn${compareMode?' btn-primary':''}`} onClick={()=>{setCompareMode(!compareMode);setSelected([]);}}><I name="columns-3" size={13}/>{compareMode?'Cancelar':'Comparar'}</button>
@@ -1167,7 +1167,7 @@ function TabRetornos({ project, onRefresh }: { project:any; onRefresh:()=>void }
             <div className="eyebrow text-[10px]">Índice cualitativo</div>
             <div className="font-mono font-semibold text-[22px] mt-1" style={{ color:'var(--jade)' }}>{avg>0?avg.toFixed(1):'—'}<span className="text-[13px] opacity-60">/10</span></div>
           </Card>
-          {project.roi && <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">ROI estimado</div><div className="font-mono font-semibold text-[22px] mt-1" style={{ color:'#6FFFCB' }}>+{project.roi}%</div></Card>}
+          {project.roi && <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">ROI estimado</div><div className="font-mono font-semibold text-[22px] mt-1" style={{ color:'var(--c-pos)' }}>+{project.roi}%</div></Card>}
         </div>
         <button className="btn btn-primary" onClick={()=>setEvalOpen(true)}><I name="pencil" size={14}/>{qual.length?'Editar evaluación':'Nueva evaluación'}</button>
       </div>
@@ -1641,7 +1641,7 @@ function QuotesView({ projects, searchText = '' }: { projects: any[]; searchText
     <div className="p-4 md:p-8 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily:'Sora' }}>Cotizaciones</h2><p className="text-[12px] mt-0.5" style={{ color:'var(--text-2)' }}>Gestiona y compara cotizaciones de proveedores</p></div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <select className="select !h-9 !text-[12px]" style={{ minWidth:160 }} value={filterProjectId} onChange={e=>{setFilterProjectId(e.target.value);setSelected([]);}}>
             <option value="">Todos los proyectos</option>
             {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
@@ -1750,7 +1750,7 @@ function InsumoFormPanel({ open, onClose, projects, defaultProjectId, insumo }: 
         <div><label className="label">Categoría</label>
           <div className="grid grid-cols-3 gap-2">
             {Object.entries(CAT_META).map(([cat, meta])=>(
-              <button key={cat} onClick={()=>setForm({...form,category:cat})} className="py-2.5 rounded-lg text-[12px] font-medium transition-all" style={{ background:form.category===cat?'rgba(0,214,143,0.08)':'rgba(255,255,255,0.02)', border:`1px solid ${form.category===cat?'rgba(0,214,143,0.45)':'var(--line)'}`, color:form.category===cat?'#6FFFCB':meta.color }}>{cat}</button>
+              <button key={cat} onClick={()=>setForm({...form,category:cat})} className="py-2.5 rounded-lg text-[12px] font-medium transition-all" style={{ background:form.category===cat?'rgba(0,214,143,0.08)':'rgba(255,255,255,0.02)', border:`1px solid ${form.category===cat?'rgba(0,214,143,0.45)':'var(--line)'}`, color:form.category===cat?'var(--c-pos)':meta.color }}>{cat}</button>
             ))}
           </div>
         </div>
@@ -1812,7 +1812,7 @@ function MatServicioFormPanel({ open, onClose, projects, defaultProjectId, item 
         <div><label className="label">Categoría</label>
           <div className="grid grid-cols-3 gap-2">
             {Object.entries(CAT_META).map(([cat, meta]) => (
-              <button key={cat} onClick={() => setForm({ ...form, category: cat })} className="py-2.5 rounded-lg text-[12px] font-medium transition-all" style={{ background: form.category === cat ? 'rgba(0,214,143,0.08)' : 'rgba(255,255,255,0.02)', border: `1px solid ${form.category === cat ? 'rgba(0,214,143,0.45)' : 'var(--line)'}`, color: form.category === cat ? '#6FFFCB' : meta.color }}>{cat}</button>
+              <button key={cat} onClick={() => setForm({ ...form, category: cat })} className="py-2.5 rounded-lg text-[12px] font-medium transition-all" style={{ background: form.category === cat ? 'rgba(0,214,143,0.08)' : 'rgba(255,255,255,0.02)', border: `1px solid ${form.category === cat ? 'rgba(0,214,143,0.45)' : 'var(--line)'}`, color: form.category === cat ? 'var(--c-pos)' : meta.color }}>{cat}</button>
             ))}
           </div>
         </div>
@@ -1831,7 +1831,7 @@ function MatServicioFormPanel({ open, onClose, projects, defaultProjectId, item 
         <div><label className="label">Estado</label>
           <div className="grid grid-cols-2 gap-2">
             {Object.entries(STATUS_MAT_META).map(([s, meta]) => (
-              <button key={s} onClick={() => setForm({ ...form, status: s })} className="py-2.5 rounded-lg text-[12px] font-medium transition-all" style={{ background: form.status === s ? 'rgba(0,214,143,0.08)' : 'rgba(255,255,255,0.02)', border: `1px solid ${form.status === s ? 'rgba(0,214,143,0.45)' : 'var(--line)'}`, color: form.status === s ? '#6FFFCB' : meta.color }}>{s}</button>
+              <button key={s} onClick={() => setForm({ ...form, status: s })} className="py-2.5 rounded-lg text-[12px] font-medium transition-all" style={{ background: form.status === s ? 'rgba(0,214,143,0.08)' : 'rgba(255,255,255,0.02)', border: `1px solid ${form.status === s ? 'rgba(0,214,143,0.45)' : 'var(--line)'}`, color: form.status === s ? 'var(--c-pos)' : meta.color }}>{s}</button>
             ))}
           </div>
         </div>
@@ -1922,14 +1922,14 @@ function InputsView({ projects, searchText = '' }: { projects: any[]; searchText
     <div className="p-4 md:p-8 space-y-6">
 
       {/* ── Sub-tab navigation ── */}
-      <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line)', width: 'fit-content' }}>
+      <div className="flex items-center gap-1 p-1 rounded-xl w-full md:w-fit" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--line)' }}>
         {([
           { id: 'insumos',    label: 'Catálogo de Insumos',      icon: 'package' },
           { id: 'materiales', label: 'Materiales y Servicios',    icon: 'layers'  },
         ] as const).map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition-all"
-            style={{ background: activeTab === tab.id ? 'rgba(0,214,143,0.1)' : 'transparent', color: activeTab === tab.id ? '#6FFFCB' : 'var(--text-2)', border: activeTab === tab.id ? '1px solid rgba(0,214,143,0.3)' : '1px solid transparent' }}>
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition-all"
+            style={{ background: activeTab === tab.id ? 'rgba(0,214,143,0.1)' : 'transparent', color: activeTab === tab.id ? 'var(--c-pos)' : 'var(--text-2)', border: activeTab === tab.id ? '1px solid rgba(0,214,143,0.3)' : '1px solid transparent' }}>
             <I name={tab.icon} size={14} />{tab.label}
           </button>
         ))}
@@ -1940,7 +1940,7 @@ function InputsView({ projects, searchText = '' }: { projects: any[]; searchText
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div><h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily: 'Sora' }}>Catálogo de insumos</h2><p className="text-[12px] mt-0.5" style={{ color: 'var(--text-2)' }}>Materiales, servicios y recursos de tus proyectos</p></div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <select className="select !h-9 !text-[12px]" style={{ minWidth: 160 }} value={filterProjectId} onChange={e => setFilterProjectId(e.target.value)}>
                 <option value="">Todos los proyectos</option>
                 {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -2227,14 +2227,14 @@ function ReturnsView({ projects, onRefresh }: { projects: any[]; onRefresh: () =
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Card className="p-4 md:p-5">
               <div className="eyebrow text-[10px] mb-2">Retorno cualitativo</div>
-              <div className="font-mono font-semibold text-[24px]" style={{ color: avgQual ? (avgQual >= 7 ? '#6FFFCB' : avgQual >= 5 ? '#FFD08A' : '#FFB0BF') : 'var(--text-3)' }}>
+              <div className="font-mono font-semibold text-[24px]" style={{ color: avgQual ? (avgQual >= 7 ? 'var(--c-pos)' : avgQual >= 5 ? 'var(--c-warn)' : 'var(--c-neg)') : 'var(--text-3)' }}>
                 {avgQual ? avgQual.toFixed(1) : '—'}<span className="text-[14px] opacity-60">/10</span>
               </div>
               <div className="text-[11px] mt-1" style={{ color: 'var(--text-2)' }}>promedio ponderado</div>
             </Card>
             <Card className="p-4 md:p-5">
               <div className="eyebrow text-[10px] mb-2">ROI financiero</div>
-              <div className="font-mono font-semibold text-[24px]" style={{ color: avgRoi != null ? '#6FFFCB' : 'var(--text-3)' }}>
+              <div className="font-mono font-semibold text-[24px]" style={{ color: avgRoi != null ? 'var(--c-pos)' : 'var(--text-3)' }}>
                 {avgRoi != null ? `+${avgRoi.toFixed(0)}%` : '—'}
               </div>
               <div className="text-[11px] mt-1" style={{ color: 'var(--text-2)' }}>{projectsWithRoi.length > 0 ? `${projectsWithRoi.length} proyecto${projectsWithRoi.length > 1 ? 's' : ''} con datos` : 'sin datos financieros'}</div>
@@ -2246,7 +2246,7 @@ function ReturnsView({ projects, onRefresh }: { projects: any[]; onRefresh: () =
             </Card>
             <Card className="p-4 md:p-5">
               <div className="eyebrow text-[10px] mb-2">Mejor dimensión</div>
-              <div className="font-bold text-[17px] truncate" style={{ fontFamily: 'Sora', color: bestDim ? '#6FFFCB' : 'var(--text-3)' }}>{bestDim ? bestDim.dim : '—'}</div>
+              <div className="font-bold text-[17px] truncate" style={{ fontFamily: 'Sora', color: bestDim ? 'var(--c-pos)' : 'var(--text-3)' }}>{bestDim ? bestDim.dim : '—'}</div>
               <div className="text-[11px] mt-1" style={{ color: 'var(--text-2)' }}>{bestDim ? `${bestDim.avg.toFixed(1)}/10 promedio` : 'sin datos'}</div>
             </Card>
           </div>
@@ -2288,7 +2288,7 @@ function ReturnsView({ projects, onRefresh }: { projects: any[]; onRefresh: () =
                           <div className="text-[10.5px]" style={{ color: 'var(--text-3)' }}>{p.scope}</div>
                         </div>
                         <div className="text-right flex-shrink-0">
-                          <div className="font-mono font-semibold text-[15px]" style={{ color: p.avg >= 8 ? '#6FFFCB' : p.avg >= 6 ? '#FFD08A' : 'var(--text-1)' }}>{p.avg.toFixed(1)}</div>
+                          <div className="font-mono font-semibold text-[15px]" style={{ color: p.avg >= 8 ? 'var(--c-pos)' : p.avg >= 6 ? 'var(--c-warn)' : 'var(--text-1)' }}>{p.avg.toFixed(1)}</div>
                           <div className="text-[10px]" style={{ color: 'var(--text-3)' }}>de 10</div>
                         </div>
                       </div>
@@ -2446,7 +2446,7 @@ function NewEvalPanel({ open, onClose, projects, onSaved, defaultProjectId }: { 
               <div key={dim}>
                 <div className="flex items-center justify-between mb-2">
                   <label className="label !mb-0">{dim}</label>
-                  <span className="font-mono font-semibold text-[14px]" style={{ color: scores[dim] >= 8 ? '#6FFFCB' : scores[dim] >= 5 ? '#FFD08A' : '#FFB0BF' }}>{scores[dim]}/10</span>
+                  <span className="font-mono font-semibold text-[14px]" style={{ color: scores[dim] >= 8 ? 'var(--c-pos)' : scores[dim] >= 5 ? 'var(--c-warn)' : 'var(--c-neg)' }}>{scores[dim]}/10</span>
                 </div>
                 <input type="range" min={1} max={10} value={scores[dim]} onChange={e => setScores({ ...scores, [dim]: Number(e.target.value) })} className="slider-jade w-full" style={{ '--val': `${(scores[dim] - 1) / 9 * 100}%` } as any}/>
                 <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--text-3)' }}><span>Muy bajo</span><span>Excelente</span></div>
@@ -2454,7 +2454,7 @@ function NewEvalPanel({ open, onClose, projects, onSaved, defaultProjectId }: { 
             ))}
             <div className="flex justify-between items-center px-3 py-2 rounded-lg" style={{ background: 'rgba(168,140,255,0.06)', border: '1px solid rgba(168,140,255,0.2)' }}>
               <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>Promedio cualitativo</span>
-              <span className="font-mono font-bold text-[16px]" style={{ color: avgQual >= 8 ? '#6FFFCB' : avgQual >= 5 ? '#FFD08A' : '#FFB0BF' }}>{avgQual.toFixed(1)}/10</span>
+              <span className="font-mono font-bold text-[16px]" style={{ color: avgQual >= 8 ? 'var(--c-pos)' : avgQual >= 5 ? 'var(--c-warn)' : 'var(--c-neg)' }}>{avgQual.toFixed(1)}/10</span>
             </div>
             <div><label className="label">Notas / aprendizajes</label>
               <textarea className="input" style={{ minHeight: 68, resize: 'none' }} placeholder="¿Qué aprendiste? ¿Qué harías diferente?" value={notes} onChange={e => setNotes(e.target.value)}/>
@@ -2476,7 +2476,7 @@ function NewEvalPanel({ open, onClose, projects, onSaved, defaultProjectId }: { 
             {roi !== null && (
               <div className="flex items-center justify-between px-3 py-3 rounded-lg" style={{ background: roi >= 0 ? 'rgba(0,214,143,0.06)' : 'rgba(255,77,109,0.06)', border: `1px solid ${roi >= 0 ? 'rgba(0,214,143,0.2)' : 'rgba(255,77,109,0.2)'}` }}>
                 <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>ROI calculado</span>
-                <span className="font-mono font-bold text-[18px]" style={{ color: roi >= 0 ? '#6FFFCB' : '#FFB0BF' }}>{roi >= 0 ? '+' : ''}{roi.toFixed(1)}%</span>
+                <span className="font-mono font-bold text-[18px]" style={{ color: roi >= 0 ? 'var(--c-pos)' : 'var(--c-neg)' }}>{roi >= 0 ? '+' : ''}{roi.toFixed(1)}%</span>
               </div>
             )}
           </div>
