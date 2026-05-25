@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useMemo, useLayoutEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import type { MaterialServicio } from '../types/domain';
-import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, Legend } from 'recharts';
+import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip, BarChart, Bar, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Cell, Legend } from 'recharts';
 
 // ─── CONSTANTS ───────────────────────────────────────────────
 const SCOPE_META: Record<string, { icon: string; color: string; bg: string; border: string }> = {
@@ -132,7 +132,7 @@ function SlideOver({ open, onClose, title, subtitle, children, width = 580 }: { 
   return (
     <div className="fixed inset-0 z-50 fade-in" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }} onClick={onClose}>
       <div className="absolute top-0 right-0 h-full panel-slide" style={{ width: Math.min(width, typeof window !== 'undefined' ? window.innerWidth : width) }} onClick={e => e.stopPropagation()}>
-        <div className="h-full flex flex-col" style={{ background: 'linear-gradient(180deg,#0F0F18,#0A0A12)', borderLeft: '1px solid var(--line-strong)' }}>
+        <div className="h-full flex flex-col" style={{ background: 'linear-gradient(180deg, var(--bg-1), var(--bg-0))', borderLeft: '1px solid var(--line-strong)' }}>
           <div className="flex items-start justify-between p-6 hairline-b">
             <div>{subtitle && <div className="eyebrow mb-1">{subtitle}</div>}<h2 className="text-2xl font-bold" style={{ fontFamily: 'Sora' }}>{title}</h2></div>
             <button className="btn btn-ghost" onClick={onClose}><I name="x" size={16} /></button>
@@ -141,6 +141,38 @@ function SlideOver({ open, onClose, title, subtitle, children, width = 580 }: { 
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── CHART PRIMITIVES ────────────────────────────────────────
+function CTooltip({ active, payload, label, formatter }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="tip">
+      {label && <div className="mb-1.5 font-semibold text-[12px]" style={{ fontFamily:'Sora', color:'var(--text-0)' }}>{label}</div>}
+      {payload.map((p: any, i: number) => (
+        <div key={i} className="flex items-center gap-3 text-[11px] my-0.5">
+          <span className="flex items-center gap-1.5 flex-1">
+            <span className="inline-block rounded-sm" style={{ width:8, height:8, background:p.color }}/>
+            <span style={{ color:'var(--text-2)' }}>{p.name}</span>
+          </span>
+          <span className="font-mono" style={{ color:'var(--text-0)' }}>
+            {formatter ? formatter(Number(p.value)) : p.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SparkLine({ data, color = '#00D68F', height = 36 }: { data: number[]; color?: string; height?: number }) {
+  const d = data.map((v, i) => ({ i, v }));
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={d} margin={{ top:2, right:0, left:0, bottom:0 }}>
+        <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.8} dot={false}/>
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
 
@@ -366,6 +398,31 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
   const avgQual = projWithQual.length ? projWithQual.reduce((a:number,p:any) =>
     a + (p.qualitative||[]).reduce((s:number,d:any)=>s+d.score,0)/p.qualitative.length, 0) / projWithQual.length : 0;
 
+  const burnRate = useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: 7 }, (_, idx) => {
+      const i = 6 - idx;
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const dEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+      const mLabel = d.toLocaleString('es-CL', { month: 'short' });
+      let plan = 0, exec = 0;
+      for (const p of scoped) {
+        const ps = new Date(p.start_date || p.created_at || now);
+        const pe = p.end_date ? new Date(p.end_date) : new Date(now.getFullYear(), now.getMonth() + 3, 1);
+        const total = Math.max(1, pe.getTime() - ps.getTime());
+        const toEnd = Math.max(0, dEnd.getTime() - ps.getTime());
+        plan += (p.budget || 0) * Math.min(1, toEnd / total);
+        if (dEnd <= now) {
+          const toNow = Math.max(1, now.getTime() - ps.getTime());
+          exec += (p.executed || 0) * Math.min(1, toEnd / toNow);
+        }
+      }
+      return { m: mLabel, planificado: Math.round(plan), ejecutado: dEnd <= now ? Math.round(exec) : undefined as any };
+    });
+  }, [scoped]);
+
+  const sparkExec = burnRate.filter(d => d.ejecutado != null).map(d => d.ejecutado);
+
   const alerts = useMemo(() => [
     ...scoped.filter((p:any) => p.health==='danger').map((p:any) => ({
       id:p.id+'_over', sev:'red', icon:'alert-triangle',
@@ -418,10 +475,15 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
           <div className="mt-2 md:mt-3 font-mono font-semibold" style={{ fontSize:22, lineHeight:1.05 }}><MoneyCounter value={totalBudget}/></div>
           <div className="mt-1 text-[11px]" style={{ color:'var(--text-2)' }}>{scoped.length} proyecto{scoped.length!==1?'s':''} activos</div>
         </Card>
-        <Card className="p-4 md:p-5 card-hover rise" style={{ minHeight:110 }}>
+        <Card className="p-4 md:p-5 card-hover rise relative overflow-hidden" style={{ minHeight:110 }}>
           <div className="eyebrow text-[10px] md:text-[11px]">Ejecutado</div>
           <div className="mt-2 md:mt-3 font-mono font-semibold" style={{ fontSize:22, lineHeight:1.05 }}><MoneyCounter value={totalExec}/></div>
           <div className="mt-1 text-[11px]" style={{ color:'var(--text-2)' }}>{totalBudget>0?((totalExec/totalBudget)*100).toFixed(1):0}% del total</div>
+          {sparkExec.length > 1 && (
+            <div className="absolute inset-x-0 bottom-0 pointer-events-none opacity-50" style={{ height:38 }}>
+              <SparkLine data={sparkExec} color="#00D68F" height={38}/>
+            </div>
+          )}
         </Card>
         <Card className="p-4 md:p-5 card-hover rise" style={{ minHeight:110 }}>
           <div className="flex items-start justify-between">
@@ -468,28 +530,33 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
             <Card className="p-4 md:p-6">
               <div className="flex items-end justify-between mb-4">
                 <div>
-                  <div className="eyebrow mb-1">Presupuesto vs Ejecución</div>
-                  <h3 className="font-bold text-[16px] md:text-[18px]" style={{ fontFamily:'Sora' }}>Comparativa por proyecto</h3>
+                  <div className="eyebrow mb-1">Burn Rate</div>
+                  <h3 className="font-bold text-[16px] md:text-[18px]" style={{ fontFamily:'Sora' }}>Presupuesto planificado vs ejecutado</h3>
                 </div>
-                <div className="flex items-center gap-3">
-                  {[{color:'rgba(77,158,255,0.5)',label:'Presupuesto'},{color:'#00D68F',label:'Ejecutado'}].map(l=>(
-                    <span key={l.label} className="hidden md:flex items-center gap-1.5 text-[11px]" style={{ color:'var(--text-2)' }}>
-                      <span className="inline-block w-3 h-2.5 rounded-sm" style={{ background:l.color }}/>{l.label}
-                    </span>
-                  ))}
+                <div className="hidden md:flex items-center gap-4 text-[12px]" style={{ color:'var(--text-1)' }}>
+                  <span className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background:'#4D9EFF' }}/>Planificado</span>
+                  <span className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background:'#00D68F' }}/>Ejecutado</span>
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={scoped.map((p:any)=>({ name:p.name.length>13?p.name.slice(0,13)+'…':p.name, Presupuesto:p.budget||0, Ejecutado:p.executed||0 }))} margin={{ top:4, right:8, left:0, bottom:4 }} barCategoryGap="28%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false}/>
-                  <XAxis dataKey="name" tick={{ fill:'var(--text-2)', fontSize:11 }} axisLine={false} tickLine={false}/>
-                  <YAxis tick={{ fill:'var(--text-2)', fontSize:10 }} axisLine={false} tickLine={false} tickFormatter={n=>fmtShort(n)} width={52}/>
-                  <Tooltip contentStyle={{ background:'#0F0F18', border:'1px solid var(--line-strong)', borderRadius:10, fontSize:12, padding:'8px 12px' }} formatter={(v:any)=>[fmtCLP(Number(v)),undefined]} labelStyle={{ color:'var(--text-1)', fontWeight:600, marginBottom:4 }} cursor={{ fill:'rgba(255,255,255,0.03)' }}/>
-                  <Bar dataKey="Presupuesto" fill="rgba(77,158,255,0.25)" radius={[3,3,0,0]} maxBarSize={32}/>
-                  <Bar dataKey="Ejecutado" radius={[3,3,0,0]} maxBarSize={32}>
-                    {scoped.map((p:any,i:number)=><Cell key={i} fill={p.health==='danger'?'#FF4D6D':p.health==='warn'?'#F5A623':'#00D68F'}/>)}
-                  </Bar>
-                </BarChart>
+              <ResponsiveContainer width="100%" height={240}>
+                <AreaChart data={burnRate} margin={{ top:12, right:18, left:6, bottom:0 }}>
+                  <defs>
+                    <linearGradient id="gPlan" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#4D9EFF" stopOpacity={0.32}/>
+                      <stop offset="100%" stopColor="#4D9EFF" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="gExec" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#00D68F" stopOpacity={0.40}/>
+                      <stop offset="100%" stopColor="#00D68F" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="rgba(255,255,255,0.04)" strokeDasharray="0" vertical={false}/>
+                  <XAxis dataKey="m" axisLine={false} tickLine={false} tick={{ fill:'var(--text-2)', fontSize:11 }}/>
+                  <YAxis tickFormatter={n=>fmtShort(n)} axisLine={false} tickLine={false} tick={{ fill:'var(--text-2)', fontSize:10 }} width={52}/>
+                  <Tooltip content={<CTooltip formatter={fmtCLP}/>} cursor={{ stroke:'rgba(255,255,255,0.10)', strokeWidth:1 }}/>
+                  <Area type="monotone" name="Planificado" dataKey="planificado" stroke="#4D9EFF" strokeWidth={2} fill="url(#gPlan)" strokeDasharray="6 4"/>
+                  <Area type="monotone" name="Ejecutado" dataKey="ejecutado" stroke="#00D68F" strokeWidth={2.5} fill="url(#gExec)"/>
+                </AreaChart>
               </ResponsiveContainer>
             </Card>
 
@@ -568,7 +635,7 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
             <h3 className="font-bold text-[15px]" style={{ fontFamily:'Sora' }}>Retornos cualitativos</h3>
             <span className="text-[11px] hidden md:block" style={{ color:'var(--text-2)' }}>Las mejores valoraciones registradas</span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {moods.map((mood:any) => {
               const t = MOOD_TONE[mood.tone];
               return (
@@ -631,8 +698,8 @@ function ProjectActionDropdown({ project, onClose, onOpenDetail, onRefresh, posi
     : { position: 'absolute', right: 8, top: 40 };
 
   return (
-    <div ref={ref} className="z-[999] rounded-xl p-1.5 shadow-2xl flex flex-col min-w-[160px] border border-white/10" style={{ ...posStyle, background: '#0F0F18', backdropFilter: 'blur(16px)' }} onClick={e => e.stopPropagation()}>
-      <button className="flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] rounded-lg text-left hover:bg-white/5 transition-all text-white w-full" onClick={onOpenDetail}>
+    <div ref={ref} className="z-[999] rounded-xl p-1.5 shadow-2xl flex flex-col min-w-[160px]" style={{ ...posStyle, background: 'var(--bg-1)', border: '1px solid var(--line-strong)', backdropFilter: 'blur(16px)' }} onClick={e => e.stopPropagation()}>
+      <button className="flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] rounded-lg text-left transition-all w-full" style={{ color:'var(--text-0)' }} onMouseEnter={e=>(e.currentTarget.style.background='var(--bg-2)')} onMouseLeave={e=>(e.currentTarget.style.background='')} onClick={onOpenDetail}>
         <I name="eye" size={13} color="var(--text-2)" />Ver detalles
       </button>
 
@@ -643,7 +710,7 @@ function ProjectActionDropdown({ project, onClose, onOpenDetail, onRefresh, posi
         const active = project.status === st;
         const c = STATUS_META[st]?.color || '#7A7E8F';
         return (
-          <button key={st} disabled={loading} className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] rounded-lg text-left hover:bg-white/5 transition-all w-full" style={{ color: active ? c : 'var(--text-2)' }} onClick={() => updateStatus(st)}>
+          <button key={st} disabled={loading} className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] rounded-lg text-left transition-all w-full" style={{ color: active ? c : 'var(--text-2)' }} onMouseEnter={e=>(e.currentTarget.style.background='var(--bg-2)')} onMouseLeave={e=>(e.currentTarget.style.background='')} onClick={() => updateStatus(st)}>
             <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: active ? c : '#374151' }}/>
             {st}
           </button>
@@ -652,7 +719,7 @@ function ProjectActionDropdown({ project, onClose, onOpenDetail, onRefresh, posi
 
       <div className="hairline-t my-1" />
 
-      <button disabled={loading} className="flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] rounded-lg text-left hover:bg-red-500/10 text-red-400 hover:text-red-300 transition-all w-full" onClick={handleDelete}>
+      <button disabled={loading} className="flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] rounded-lg text-left transition-all w-full" style={{ color:'var(--red)' }} onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,77,109,0.08)')} onMouseLeave={e=>(e.currentTarget.style.background='')} onClick={handleDelete}>
         <I name="trash-2" size={13} color="currentColor" />Eliminar
       </button>
     </div>
@@ -1179,7 +1246,7 @@ function TabRetornos({ project, onRefresh }: { project:any; onRefresh:()=>void }
               <RadarChart data={radarData}>
                 <PolarGrid stroke="rgba(255,255,255,0.06)"/>
                 <PolarAngleAxis dataKey="dim" tick={{ fill:'var(--text-2)', fontSize:11 }}/>
-                <Tooltip contentStyle={{ background:'#0A0A12', border:'1px solid var(--line-strong)', borderRadius:8, fontSize:12 }}/>
+                <Tooltip content={<CTooltip/>}/>
                 <Radar name={project.name} dataKey="score" stroke="#00D68F" fill="#00D68F" fillOpacity={0.15}/>
               </RadarChart>
             </ResponsiveContainer>
@@ -1539,7 +1606,7 @@ function ComparativoPanel({ open, onClose, quotes, onAdjudicar }: { open:boolean
   const COLORS = ['#00D68F','#4D9EFF','#F5A623','#A88CFF','#FF8FAD'];
   return (
     <div className="fixed inset-0 z-50 fade-in" style={{ background:'rgba(0,0,0,0.65)', backdropFilter:'blur(3px)' }} onClick={onClose}>
-      <div className="absolute inset-4 md:inset-8 rounded-2xl overflow-hidden flex flex-col" style={{ background:'linear-gradient(180deg,#0F0F18,#0A0A12)', border:'1px solid var(--line-strong)' }} onClick={e=>e.stopPropagation()}>
+      <div className="absolute inset-4 md:inset-8 rounded-2xl overflow-hidden flex flex-col" style={{ background:'linear-gradient(180deg, var(--bg-1), var(--bg-0))', border:'1px solid var(--line-strong)' }} onClick={e=>e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 hairline-b flex-shrink-0">
           <div><div className="eyebrow mb-1">Módulo cotizaciones</div><h2 className="font-bold text-[20px]" style={{ fontFamily:'Sora' }}>Comparativo · {quotes.length} cotizaciones</h2></div>
           <button className="btn btn-ghost" onClick={onClose}><I name="x" size={16}/></button>
@@ -2261,7 +2328,7 @@ function ReturnsView({ projects, onRefresh }: { projects: any[]; onRefresh: () =
                   <RadarChart data={radarData}>
                     <PolarGrid stroke="rgba(255,255,255,0.06)"/>
                     <PolarAngleAxis dataKey="dim" tick={{ fill: 'var(--text-2)', fontSize: 11 }}/>
-                    <Tooltip contentStyle={{ background: '#0A0A12', border: '1px solid var(--line-strong)', borderRadius: 8, fontSize: 12 }}/>
+                    <Tooltip content={<CTooltip/>}/>
                     {scopedProjects.map((p, i) => (
                       <Radar key={p.id} name={p.name} dataKey={p.id} stroke={COLORS[i % COLORS.length]} fill={COLORS[i % COLORS.length]} fillOpacity={0.13}/>
                     ))}
@@ -2310,7 +2377,7 @@ function ReturnsView({ projects, onRefresh }: { projects: any[]; onRefresh: () =
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false}/>
                 <XAxis dataKey="name" tick={{ fill: 'var(--text-2)', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.08)' }} tickLine={false}/>
                 <YAxis tick={{ fill: 'var(--text-2)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={n => fmtShort(n)} width={52}/>
-                <Tooltip contentStyle={{ background: '#0F0F18', border: '1px solid var(--line-strong)', borderRadius: 10, fontSize: 12, padding: '8px 12px' }} formatter={(v: any) => [fmtCLP(Number(v)), undefined]} labelStyle={{ color: 'var(--text-1)', fontWeight: 600, marginBottom: 4 }} cursor={{ fill: 'rgba(255,255,255,0.03)' }}/>
+                <Tooltip content={<CTooltip formatter={fmtCLP}/>} cursor={{ fill:'rgba(255,255,255,0.03)' }}/>
                 <Legend wrapperStyle={{ fontSize: 11, color: 'var(--text-2)', paddingTop: 12 }}/>
                 <Bar dataKey="Presupuesto" fill="rgba(77,158,255,0.45)" radius={[4, 4, 0, 0]}/>
                 <Bar dataKey="Ejecutado" fill="#00D68F" radius={[4, 4, 0, 0]}/>
@@ -2328,7 +2395,7 @@ function ReturnsView({ projects, onRefresh }: { projects: any[]; onRefresh: () =
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false}/>
                   <XAxis dataKey="name" tick={{ fill: 'var(--text-2)', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.08)' }} tickLine={false}/>
                   <YAxis tick={{ fill: 'var(--text-2)', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} width={40}/>
-                  <Tooltip contentStyle={{ background: '#0F0F18', border: '1px solid var(--line-strong)', borderRadius: 10, fontSize: 12, padding: '8px 12px' }} formatter={(v: any) => [`+${Number(v).toFixed(1)}%`, 'ROI']} labelStyle={{ color: 'var(--text-1)', fontWeight: 600, marginBottom: 4 }} cursor={{ fill: 'rgba(255,255,255,0.03)' }}/>
+                  <Tooltip content={<CTooltip formatter={(v:number)=>`+${v.toFixed(1)}%`}/>} cursor={{ fill:'rgba(255,255,255,0.03)' }}/>
                   <Bar dataKey="roi" name="ROI" fill="#6FFFCB" radius={[6, 6, 0, 0]}/>
                 </BarChart>
               </ResponsiveContainer>
