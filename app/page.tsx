@@ -381,6 +381,26 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
   const [filterIds, setFilterIds] = useState<string[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
+  // Chart range state
+  const _now = new Date();
+  const toYM  = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  const toYMD = (d: Date) => d.toISOString().split('T')[0];
+  const dfltStart = toYM(new Date(_now.getFullYear(), _now.getMonth()-3, 1));
+  const dfltEnd   = toYM(new Date(_now.getFullYear(), _now.getMonth()+3, 1));
+  const [chartMode, setChartMode] = useState<'month'|'day'>('month');
+  const [rangeStart, setRangeStart] = useState(dfltStart);
+  const [rangeEnd,   setRangeEnd]   = useState(dfltEnd);
+  const isDefault = chartMode==='month' && rangeStart===dfltStart && rangeEnd===dfltEnd;
+
+  function switchMode(mode: 'month'|'day') {
+    setChartMode(mode);
+    if (mode === 'month') { setRangeStart(dfltStart); setRangeEnd(dfltEnd); }
+    else {
+      setRangeStart(toYMD(new Date(_now.getFullYear(), _now.getMonth(), 1)));
+      setRangeEnd(toYMD(new Date(_now.getFullYear(), _now.getMonth()+1, 0)));
+    }
+  }
+
   const scoped = useMemo(
     () => filterIds.length > 0 ? projects.filter(p => filterIds.includes(p.id)) : projects,
     [filterIds, projects]
@@ -400,11 +420,35 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
 
   const burnRate = useMemo(() => {
     const now = new Date();
-    return Array.from({ length: 7 }, (_, idx) => {
-      const i = 6 - idx;
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const dEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
-      const mLabel = d.toLocaleString('es-CL', { month: 'short' });
+    type Bucket = { dEnd: Date; label: string };
+    const buckets: Bucket[] = [];
+
+    if (chartMode === 'day') {
+      const start = new Date(rangeStart + 'T00:00:00');
+      const end   = new Date(rangeEnd   + 'T23:59:59');
+      let cur = new Date(start);
+      while (cur <= end && buckets.length < 90) {
+        const dEnd = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate(), 23, 59, 59);
+        buckets.push({ dEnd, label: cur.getDate() + ' ' + cur.toLocaleString('es-CL', { month: 'short' }) });
+        cur.setDate(cur.getDate() + 1);
+      }
+    } else {
+      const [sy, sm] = rangeStart.split('-').map(Number);
+      const [ey, em] = rangeEnd.split('-').map(Number);
+      const spanYears = sy !== ey;
+      let y = sy, m = sm - 1;
+      while (y * 12 + m <= ey * 12 + (em - 1)) {
+        const d = new Date(y, m, 1);
+        const dEnd = new Date(y, m + 1, 0, 23, 59, 59);
+        const label = spanYears
+          ? d.toLocaleString('es-CL', { month: 'short' }) + " '" + String(y).slice(2)
+          : d.toLocaleString('es-CL', { month: 'short' });
+        buckets.push({ dEnd, label });
+        if (++m > 11) { m = 0; y++; }
+      }
+    }
+
+    return buckets.map(({ dEnd, label: m }) => {
       let plan = 0, exec = 0;
       for (const p of scoped) {
         const ps = new Date(p.start_date || p.created_at || now);
@@ -417,9 +461,9 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
           exec += (p.executed || 0) * Math.min(1, toEnd / toNow);
         }
       }
-      return { m: mLabel, planificado: Math.round(plan), ejecutado: dEnd <= now ? Math.round(exec) : undefined as any };
+      return { m, planificado: Math.round(plan), ejecutado: dEnd <= now ? Math.round(exec) : undefined as any };
     });
-  }, [scoped]);
+  }, [scoped, chartMode, rangeStart, rangeEnd]);
 
   const sparkExec = burnRate.filter(d => d.ejecutado != null).map(d => d.ejecutado);
 
@@ -528,14 +572,37 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
         <div className="grid gap-4" style={{ gridTemplateColumns: alerts.length>0 ? '1fr' : '1fr' }}>
           <div className={`grid gap-4 ${alerts.length>0 ? 'md:grid-cols-[1fr_360px]' : ''}`}>
             <Card className="p-4 md:p-6">
-              <div className="flex items-end justify-between mb-4">
+              <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
                 <div>
                   <div className="eyebrow mb-1">Burn Rate</div>
                   <h3 className="font-bold text-[16px] md:text-[18px]" style={{ fontFamily:'Sora' }}>Presupuesto planificado vs ejecutado</h3>
                 </div>
-                <div className="hidden md:flex items-center gap-4 text-[12px]" style={{ color:'var(--text-1)' }}>
-                  <span className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background:'#4D9EFF' }}/>Planificado</span>
-                  <span className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background:'#00D68F' }}/>Ejecutado</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Mes / Día toggle */}
+                  <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{ background:'rgba(255,255,255,0.04)', border:'1px solid var(--line)' }}>
+                    {(['month','day'] as const).map(mode => (
+                      <button key={mode} onClick={()=>switchMode(mode)}
+                        className="px-2.5 py-1 rounded-md text-[11px] font-medium transition-all"
+                        style={{ background:chartMode===mode?'rgba(0,214,143,0.12)':'transparent', color:chartMode===mode?'var(--c-pos)':'var(--text-2)', border:chartMode===mode?'1px solid rgba(0,214,143,0.25)':'1px solid transparent' }}>
+                        {mode==='month'?'Mes':'Día'}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Range pickers */}
+                  <input type={chartMode==='month'?'month':'date'} className="select !h-8 !text-[12px]" style={{ width:chartMode==='month'?128:142 }} value={rangeStart} onChange={e=>setRangeStart(e.target.value)}/>
+                  <span style={{ color:'var(--text-3)', fontSize:11 }}>→</span>
+                  <input type={chartMode==='month'?'month':'date'} className="select !h-8 !text-[12px]" style={{ width:chartMode==='month'?128:142 }} value={rangeEnd} onChange={e=>setRangeEnd(e.target.value)}/>
+                  {/* Reset — only when custom */}
+                  {!isDefault && (
+                    <button className="btn btn-ghost !h-8 !w-8 !p-0" title="Volver a vista por defecto" onClick={()=>{setChartMode('month');setRangeStart(dfltStart);setRangeEnd(dfltEnd);}}>
+                      <I name="rotate-ccw" size={12}/>
+                    </button>
+                  )}
+                  {/* Legend */}
+                  <div className="hidden md:flex items-center gap-3 pl-1 text-[11px]" style={{ color:'var(--text-1)' }}>
+                    <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background:'#4D9EFF' }}/>Plan</span>
+                    <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background:'#00D68F' }}/>Ejec</span>
+                  </div>
                 </div>
               </div>
               <ResponsiveContainer width="100%" height={240}>
@@ -551,7 +618,7 @@ function Dashboard({ projects, onOpenProject }: { projects: any[]; onOpenProject
                     </linearGradient>
                   </defs>
                   <CartesianGrid stroke="rgba(255,255,255,0.04)" strokeDasharray="0" vertical={false}/>
-                  <XAxis dataKey="m" axisLine={false} tickLine={false} tick={{ fill:'var(--text-2)', fontSize:11 }}/>
+                  <XAxis dataKey="m" axisLine={false} tickLine={false} tick={{ fill:'var(--text-2)', fontSize:11 }} interval={Math.max(0, Math.floor(burnRate.length/8))}/>
                   <YAxis tickFormatter={n=>fmtShort(n)} axisLine={false} tickLine={false} tick={{ fill:'var(--text-2)', fontSize:10 }} width={52}/>
                   <Tooltip content={<CTooltip formatter={fmtCLP}/>} cursor={{ stroke:'rgba(255,255,255,0.10)', strokeWidth:1 }}/>
                   <Area type="monotone" name="Planificado" dataKey="planificado" stroke="#4D9EFF" strokeWidth={2} fill="url(#gPlan)" strokeDasharray="6 4"/>
