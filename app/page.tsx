@@ -223,7 +223,10 @@ function Sidebar({ active, onChange, collapsed, onToggle, projects, mobileOpen, 
 // ─── TOPBAR ──────────────────────────────────────────────────
 function TopBar({ title, subtitle, onMenuClick, searchText, onSearchChange, onBellClick, hasNotifications }: { title: string; subtitle?: string; onMenuClick: () => void; searchText: string; onSearchChange: (val: string) => void; onBellClick: () => void; hasNotifications: boolean }) {
   return (
-    <header className="hairline-b flex items-center gap-4 px-4 md:px-8" style={{ height:72 }}>
+    <header className="hairline-b flex items-center gap-3 px-4 md:px-8" style={{ height:72 }}>
+      <button className="md:hidden btn btn-ghost !w-9 !h-9 !p-0 flex-shrink-0" onClick={onMenuClick}>
+        <I name="menu" size={18}/>
+      </button>
 
       <div className="flex-1 min-w-0">
         <h1 className="font-bold text-[18px] md:text-[22px] truncate" style={{ fontFamily:'Sora', letterSpacing:'-0.02em' }}>{title}</h1>
@@ -240,6 +243,31 @@ function TopBar({ title, subtitle, onMenuClick, searchText, onSearchChange, onBe
         )}
       </button>
     </header>
+  );
+}
+
+// ─── BOTTOM NAV (mobile) ─────────────────────────────────────
+function BottomNav({ active, onChange, navItems = NAV }: { active: string; onChange: (id: string) => void; navItems?: typeof NAV }) {
+  return (
+    <nav
+      className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex hairline-t"
+      style={{ background: 'rgba(8,8,15,0.97)', backdropFilter: 'blur(20px)', height: 60, paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
+      {navItems.map((item: any) => {
+        const isActive = active === item.id;
+        return (
+          <button
+            key={item.id}
+            onClick={() => onChange(item.id)}
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 transition-all"
+            style={{ color: isActive ? 'var(--jade)' : 'var(--text-2)' }}
+          >
+            <I name={item.icon} size={19} color={isActive ? 'var(--jade)' : undefined}/>
+            <span className="text-[9px] font-medium tracking-wide">{item.label}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -684,13 +712,13 @@ function ProjectsView({ projects, onOpenProject, onRefresh }: { projects: any[];
               </button>
             ))}
           </div>
-          <button className="btn btn-primary" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/><span className="hidden md:inline">Nuevo proyecto</span></button>
+          <button className="btn btn-primary" onClick={()=>setNewOpen(true)}><I name="plus" size={14}/>Nuevo proyecto</button>
         </div>
       </div>
 
       {view==='list' ? (
         <div className="overflow-x-auto">
-          <Card className="overflow-hidden min-w-full md:min-w-[700px]">
+          <Card className="overflow-hidden" style={{ minWidth: 700 }}>
             <table className="tbl">
               <thead>
                 <tr>
@@ -999,8 +1027,8 @@ function TabCotizaciones({ quotes, project, onRefresh }: { quotes:any[]; project
           <Card className="p-3 md:p-4"><div className="eyebrow text-[10px]">Adjudicado</div><div className="font-mono font-semibold text-[18px] mt-1" style={{ color:'#6FFFCB' }}>{fmtCLP(adjudicado)}</div></Card>
         </div>
         <div className="flex gap-2">
-          <button className={`btn${compareMode?' btn-primary':''}`} onClick={()=>{setCompareMode(!compareMode);setSelected([]);}}><I name="columns-3" size={13}/><span className="hidden md:inline">{compareMode?'Cancelar':'Comparar'}</span></button>
-          <button className="btn btn-primary" onClick={()=>{setEditQuote(null);setFormOpen(true);}}><I name="plus" size={14}/><span className="hidden md:inline">Nueva</span></button>
+          <button className={`btn${compareMode?' btn-primary':''}`} onClick={()=>{setCompareMode(!compareMode);setSelected([]);}}><I name="columns-3" size={13}/>{compareMode?'Cancelar':'Comparar'}</button>
+          <button className="btn btn-primary" onClick={()=>{setEditQuote(null);setFormOpen(true);}}><I name="plus" size={14}/>Nueva</button>
         </div>
       </div>
 
@@ -1345,7 +1373,7 @@ function ProjectDetail({ project, onBack, onRefresh }: { project:any; onBack:()=
         {tab==='resumen' && (editing
           ? <><button className="btn btn-ghost" onClick={()=>{setEditing(false);setForm({...project});}}>Cancelar</button>
               <button className="btn btn-primary" onClick={handleSave} disabled={loading}><I name="check" size={14}/>{loading?'Guardando...':'Guardar'}</button></>
-          : <button className="btn" onClick={()=>setEditing(true)}><I name="pencil" size={14}/><span className="hidden md:inline">Editar</span></button>
+          : <button className="btn" onClick={()=>setEditing(true)}><I name="pencil" size={14}/>Editar</button>
         )}
       </div>
 
@@ -2924,7 +2952,7 @@ function AppShell() {
 
       <main className="flex-1 flex flex-col relative" style={{ minWidth:0 }}>
         <TopBar title={titles[safeRoute.view]||''} subtitle={subtitles[safeRoute.view]} onMenuClick={()=>setMobileOpen(true)} searchText={searchText} onSearchChange={setSearchText} onBellClick={()=>setNotificationsOpen(true)} hasNotifications={alerts.length > 0}/>
-        <div className="flex-1 overflow-y-auto relative">
+        <div className="flex-1 overflow-y-auto relative pb-[60px] md:pb-0">
           <div className="fade-in">
             {safeRoute.view==='dashboard' && <Dashboard projects={filteredProjects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})}/>}
             {safeRoute.view==='projects' && <ProjectsView projects={filteredProjects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})} onRefresh={loadData}/>}
@@ -2938,6 +2966,7 @@ function AppShell() {
       </main>
 
       <NotificationsPanel open={notificationsOpen} onClose={()=>setNotificationsOpen(false)} alerts={alerts} onNavigate={onNavigate}/>
+      <BottomNav active={activeNav} onChange={onNavigate} navItems={visibleNav}/>
     </div>
   );
 }
