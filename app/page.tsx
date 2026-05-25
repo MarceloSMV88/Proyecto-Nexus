@@ -2151,30 +2151,32 @@ function ReturnsView({ projects, onRefresh }: { projects: any[]; onRefresh: () =
 
       {/* Project selector */}
       <Card className="p-4" strong>
-        <div className="flex items-start gap-4">
-          <div className="rounded-lg flex items-center justify-center flex-shrink-0" style={{ width: 38, height: 38, background: 'rgba(168,140,255,0.10)', border: '1px solid rgba(168,140,255,0.30)', color: '#A88CFF' }}>
-            <I name="heart" size={17}/>
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="font-semibold text-[13.5px]">Proyectos a evaluar</span>
-              {selected.length > 0
-                ? <span className="pill" style={{ background: 'rgba(168,140,255,0.10)', borderColor: 'rgba(168,140,255,0.30)', color: '#A88CFF' }}><I name="check" size={10}/>{selected.length} {selected.length === 1 ? 'proyecto' : 'proyectos'}</span>
-                : <span className="pill pill-amber"><I name="alert-circle" size={10}/>selecciona al menos uno</span>
-              }
+        <div className="flex flex-col md:flex-row md:items-start gap-3 md:gap-4">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <div className="rounded-lg flex items-center justify-center flex-shrink-0" style={{ width: 38, height: 38, background: 'rgba(168,140,255,0.10)', border: '1px solid rgba(168,140,255,0.30)', color: '#A88CFF' }}>
+              <I name="heart" size={17}/>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              {selected.length === 0
-                ? <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>Filtra por uno o más proyectos para ver y crear evaluaciones.</span>
-                : scopedProjects.map(p => {
-                    const m = scopeMeta(p.scope);
-                    return (
-                      <span key={p.id} className="pill !text-[11.5px] gap-1.5 cursor-pointer" style={{ background: m.bg, borderColor: m.border, color: m.color }} onClick={() => setSelected(s => s.filter(x => x !== p.id))}>
-                        <I name={m.icon} size={11}/>{p.name}<I name="x" size={10} className="opacity-60"/>
-                      </span>
-                    );
-                  })
-              }
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <span className="font-semibold text-[13.5px]">Proyectos a evaluar</span>
+                {selected.length > 0
+                  ? <span className="pill" style={{ background: 'rgba(168,140,255,0.10)', borderColor: 'rgba(168,140,255,0.30)', color: '#A88CFF' }}><I name="check" size={10}/>{selected.length} {selected.length === 1 ? 'proyecto' : 'proyectos'}</span>
+                  : <span className="pill pill-amber"><I name="alert-circle" size={10}/>selecciona al menos uno</span>
+                }
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {selected.length === 0
+                  ? <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>Filtra por uno o más proyectos para ver y crear evaluaciones.</span>
+                  : scopedProjects.map(p => {
+                      const m = scopeMeta(p.scope);
+                      return (
+                        <span key={p.id} className="pill !text-[11.5px] gap-1.5 cursor-pointer" style={{ background: m.bg, borderColor: m.border, color: m.color }} onClick={() => setSelected(s => s.filter(x => x !== p.id))}>
+                          <I name={m.icon} size={11}/>{p.name}<I name="x" size={10} className="opacity-60"/>
+                        </span>
+                      );
+                    })
+                }
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -2251,7 +2253,7 @@ function ReturnsView({ projects, onRefresh }: { projects: any[]; onRefresh: () =
 
           {/* Radar + Ranking */}
           {scopedProjects.some(p => (p.qualitative || []).length > 0) && (
-            <div className="grid gap-5" style={{ gridTemplateColumns: 'minmax(0,1.5fr) minmax(0,1fr)' }}>
+            <div className="grid gap-5 grid-cols-1 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
               <Card className="p-5 md:p-6">
                 <div className="eyebrow mb-1">Radar cualitativo</div>
                 <p className="text-[12px] mb-4" style={{ color: 'var(--text-2)' }}>Comparativa en {QUAL_DIMS.length} dimensiones · {scopedProjects.length} proyecto{scopedProjects.length > 1 ? 's' : ''}</p>
