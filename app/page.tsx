@@ -1,7 +1,5 @@
 'use client';
 
-const APP_VERSION = '1.0.0'; // ejemplo de trabajo con ramas
-
 import { useEffect, useState, useRef, useMemo, useLayoutEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
