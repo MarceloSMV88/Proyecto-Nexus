@@ -2696,12 +2696,20 @@ function AccessDeniedScreen() {
 
 // ─── SETTINGS VIEW ───────────────────────────────────────────
 function SettingsView() {
-  const { user, isAdmin, signOut } = useAuth();
-  const [saved, setSaved] = useState(false);
+  const { user, isSuperAdmin, signOut, updateProfile } = useAuth();
   const [darkMode, setDarkMode] = useState(true);
   const [appUsers, setAppUsers] = useState<any[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [roleChanging, setRoleChanging] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameVal, setNameVal] = useState('');
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameSaved, setNameSaved] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const displayName = user?.display_name || user?.email?.split('@')[0] || 'Usuario';
+  const initials = displayName.split(' ').map((w: string)=>w[0]).join('').slice(0,2).toUpperCase();
 
   function toggleTheme() {
     const next = !darkMode;
@@ -2709,7 +2717,31 @@ function SettingsView() {
     document.body.classList.toggle('light', !next);
   }
 
-  function handleSave() { setSaved(true); setTimeout(()=>setSaved(false), 2000); }
+  async function handleSaveName() {
+    const trimmed = nameVal.trim();
+    if (!trimmed) return;
+    setNameSaving(true);
+    await updateProfile({ displayName: trimmed });
+    setNameSaving(false);
+    setEditingName(false);
+    setNameSaved(true);
+    setTimeout(() => setNameSaved(false), 2000);
+  }
+
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    setAvatarUploading(true);
+    const ext = file.name.split('.').pop();
+    const path = `${user.email}/${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+    if (!uploadError) {
+      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+      await updateProfile({ avatarUrl: data.publicUrl });
+    }
+    setAvatarUploading(false);
+    e.target.value = '';
+  }
 
   async function fetchUsers() {
     setUsersLoading(true);
@@ -2718,7 +2750,7 @@ function SettingsView() {
     setUsersLoading(false);
   }
 
-  useEffect(() => { if (isAdmin) fetchUsers(); }, [isAdmin]);
+  useEffect(() => { if (isSuperAdmin) fetchUsers(); }, [isSuperAdmin]);
 
   async function handleRoleChange(email: string, newRole: string) {
     setRoleChanging(email);
@@ -2734,9 +2766,6 @@ function SettingsView() {
     none: '#7A7E8F', viewer: '#4D9EFF', editor: '#F5A623', admin: '#00D68F', superadmin: '#A88CFF'
   };
 
-  const displayName = user?.display_name || user?.email?.split('@')[0] || 'Usuario';
-  const initials = displayName.split(' ').map((w: string)=>w[0]).join('').slice(0,2).toUpperCase();
-
   return (
     <div className="p-4 md:p-8 space-y-6 max-w-2xl">
       <div><h2 className="font-bold text-[20px] md:text-[22px]" style={{ fontFamily:'Sora' }}>Configuración</h2><p className="text-[12px] mt-0.5" style={{ color:'var(--text-2)' }}>Ajustes de tu cuenta y preferencias</p></div>
@@ -2745,14 +2774,51 @@ function SettingsView() {
       <Card className="p-5 md:p-6">
         <div className="eyebrow mb-4">Perfil</div>
         <div className="flex items-center gap-4 mb-4">
-          {user?.avatar_url
-            ? <img src={user.avatar_url} alt="avatar" style={{ width:48,height:48,borderRadius:'50%',objectFit:'cover',border:'2px solid var(--line-strong)' }}/>
-            : <Avatar name={initials} size={48}/>
-          }
-          <div>
-            <div className="font-medium text-[15px]">{displayName}</div>
-            <div className="text-[12px]" style={{ color:'var(--text-2)' }}>{user?.email}</div>
-            <div className="mt-1">
+          <div className="relative flex-shrink-0">
+            {user?.avatar_url
+              ? <img src={user.avatar_url} alt="avatar" style={{ width:56,height:56,borderRadius:'50%',objectFit:'cover',border:'2px solid var(--line-strong)' }}/>
+              : <Avatar name={initials} size={56}/>
+            }
+            <button
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={avatarUploading}
+              className="absolute -bottom-1 -right-1 rounded-full flex items-center justify-center transition-all hover:opacity-80"
+              style={{ width:22,height:22,background:'var(--jade)',border:'2px solid var(--bg-0)' }}
+              title="Cambiar foto"
+            >
+              {avatarUploading ? <I name="loader" size={11} color="white"/> : <I name="camera" size={11} color="white"/>}
+            </button>
+            <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload}/>
+          </div>
+          <div className="flex-1 min-w-0">
+            {editingName ? (
+              <div className="flex items-center gap-2">
+                <input
+                  autoFocus
+                  className="input flex-1 !h-8 !text-[14px]"
+                  value={nameVal}
+                  onChange={e => setNameVal(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSaveName(); if (e.key === 'Escape') setEditingName(false); }}
+                  placeholder="Tu nombre"
+                />
+                <button className="btn btn-primary !h-8 !px-3" onClick={handleSaveName} disabled={nameSaving}>
+                  <I name={nameSaving ? 'loader' : 'check'} size={13}/>
+                </button>
+                <button className="btn btn-ghost !h-8 !px-2" onClick={() => setEditingName(false)}>
+                  <I name="x" size={13}/>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="font-medium text-[15px]">{displayName}</div>
+                <button className="btn btn-ghost !h-6 !px-1.5" onClick={() => { setNameVal(displayName); setEditingName(true); }} title="Editar nombre">
+                  <I name="pencil" size={12} style={{ color:'var(--text-2)' }}/>
+                </button>
+                {nameSaved && <span className="text-[11px]" style={{ color:'var(--jade)' }}>✓ Guardado</span>}
+              </div>
+            )}
+            <div className="text-[12px] mt-0.5" style={{ color:'var(--text-2)' }}>{user?.email}</div>
+            <div className="mt-1.5">
               <span className="pill text-[10px]" style={{ background:`${ROLE_COLORS[user?.role||'none']}18`, color:ROLE_COLORS[user?.role||'none'], borderColor:`${ROLE_COLORS[user?.role||'none']}40` }}>
                 {ROLE_LABELS[user?.role||'none']}
               </span>
@@ -2777,8 +2843,8 @@ function SettingsView() {
         </button>
       </div>
 
-      {/* Admin: Usuarios y Permisos */}
-      {isAdmin && (
+      {/* SuperAdmin: Usuarios y Permisos */}
+      {isSuperAdmin && (
         <Card className="p-5 md:p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="eyebrow">Usuarios y Permisos</div>
@@ -2828,39 +2894,20 @@ function SettingsView() {
         </Card>
       )}
 
-      {/* Base de datos */}
-      <Card className="p-5 md:p-6">
-        <div className="eyebrow mb-4">Base de datos</div>
-        <div className="space-y-3">
-          {[
-            { label:'Proyectos', icon:'folder-kanban', color:'#4D9EFF' },
-            { label:'Cotizaciones', icon:'file-text', color:'#F5A623' },
-            { label:'Insumos', icon:'package', color:'#00D68F' },
-          ].map(item=>(
-            <div key={item.label} className="flex items-center gap-3 p-3 rounded-lg" style={{ background:'rgba(255,255,255,0.02)', border:'1px solid var(--line)' }}>
-              <span className="rounded-md flex items-center justify-center" style={{ width:32,height:32,background:`${item.color}18`,border:`1px solid ${item.color}55`,color:item.color }}><I name={item.icon} size={15}/></span>
-              <span className="flex-1 text-[13px] font-medium">{item.label}</span>
-              <span className="pill pill-jade"><I name="check" size={10}/>Conectado</span>
-            </div>
-          ))}
-        </div>
-      </Card>
-
       {/* Acerca de */}
       <Card className="p-5 md:p-6">
         <div className="eyebrow mb-4">Acerca de NEXUS</div>
         <div className="space-y-2 text-[13px]" style={{ color:'var(--text-1)' }}>
-          <div className="flex justify-between"><span>Versión</span><span className="font-mono">1.0.0</span></div>
+          <div className="flex justify-between"><span>Versión</span><span className="font-mono">1.0.8</span></div>
           <div className="flex justify-between"><span>Stack</span><span className="font-mono">Next.js + Supabase + Vercel</span></div>
           <div className="flex justify-between"><span>Repositorio</span><a href="https://github.com/MarceloSMV88/Proyecto-Nexus" target="_blank" className="font-mono" style={{ color:'var(--jade)' }}>GitHub ↗</a></div>
         </div>
       </Card>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center">
         <button className="btn btn-ghost flex items-center gap-2 !text-[12px]" onClick={signOut} style={{ color:'#FF4D6D' }}>
           <I name="log-out" size={13}/>Cerrar sesión
         </button>
-        <button className="btn btn-primary" onClick={handleSave}><I name={saved?'check':'save'} size={14}/>{saved?'¡Guardado!':'Guardar cambios'}</button>
       </div>
     </div>
   );
@@ -2907,7 +2954,7 @@ function NotificationsPanel({ open, onClose, alerts, onNavigate }: { open: boole
 
 // ─── MAIN APP SHELL ───────────────────────────────────────────
 function AppShell() {
-  const { user, loading: authLoading, isAdmin } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [projects, setProjects] = useState<any[]>([]);
   const [quotes, setQuotes] = useState<any[]>([]);
   const [hitos, setHitos] = useState<any[]>([]);
@@ -3060,9 +3107,7 @@ function AppShell() {
   const titles: Record<string,string> = { dashboard:'Dashboard', projects:'Proyectos', quotes:'Cotizaciones', inputs:'Insumos', returns:'Retornos', settings:'Configuración', project_detail: currentProject?.name||'Detalle' };
   const subtitles: Record<string,string> = { dashboard:`${projects.length} proyectos activos`, projects:'Administra todas tus iniciativas', quotes:'Gestiona cotizaciones de proveedores', inputs:'Catálogo de materiales y servicios', returns:'Mide el retorno de tus proyectos', settings:'Ajustes y preferencias' };
 
-  const visibleNav = isAdmin ? NAV : NAV.filter(n => n.id !== 'settings');
-  // Redirect non-admins away from settings
-  const safeRoute = (route.view === 'settings' && !isAdmin) ? { view: 'dashboard' } : route;
+  const visibleNav = NAV;
 
   // Auth guards — after all hooks
   if (authLoading) return (
@@ -3087,16 +3132,16 @@ function AppShell() {
       <Sidebar active={activeNav} onChange={onNavigate} collapsed={collapsed} onToggle={()=>setCollapsed(!collapsed)} projects={projects} mobileOpen={mobileOpen} onMobileClose={()=>setMobileOpen(false)} navItems={visibleNav}/>
 
       <main className="flex-1 flex flex-col relative" style={{ minWidth:0 }}>
-        <TopBar title={titles[safeRoute.view]||''} subtitle={subtitles[safeRoute.view]} onMenuClick={()=>setMobileOpen(true)} searchText={searchText} onSearchChange={setSearchText} onBellClick={()=>setNotificationsOpen(true)} hasNotifications={alerts.length > 0}/>
+        <TopBar title={titles[route.view]||''} subtitle={subtitles[route.view]} onMenuClick={()=>setMobileOpen(true)} searchText={searchText} onSearchChange={setSearchText} onBellClick={()=>setNotificationsOpen(true)} hasNotifications={alerts.length > 0}/>
         <div className="flex-1 overflow-y-auto relative pb-[60px] md:pb-0">
           <div className="fade-in">
-            {safeRoute.view==='dashboard' && <Dashboard projects={filteredProjects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})}/>}
-            {safeRoute.view==='projects' && <ProjectsView projects={filteredProjects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})} onRefresh={loadData}/>}
-            {safeRoute.view==='project_detail' && currentProject && <ProjectDetail project={currentProject} onBack={()=>setRoute({view:'projects'})} onRefresh={loadData}/>}
-            {safeRoute.view==='quotes' && <QuotesView projects={projects} searchText={searchText}/>}
-            {safeRoute.view==='inputs' && <InputsView projects={projects} searchText={searchText}/>}
-            {safeRoute.view==='returns' && <ReturnsView projects={projects} onRefresh={loadData}/>}
-            {safeRoute.view==='settings' && isAdmin && <SettingsView/>}
+            {route.view==='dashboard' && <Dashboard projects={filteredProjects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})}/>}
+            {route.view==='projects' && <ProjectsView projects={filteredProjects} onOpenProject={id=>setRoute({view:'project_detail',projectId:id})} onRefresh={loadData}/>}
+            {route.view==='project_detail' && currentProject && <ProjectDetail project={currentProject} onBack={()=>setRoute({view:'projects'})} onRefresh={loadData}/>}
+            {route.view==='quotes' && <QuotesView projects={projects} searchText={searchText}/>}
+            {route.view==='inputs' && <InputsView projects={projects} searchText={searchText}/>}
+            {route.view==='returns' && <ReturnsView projects={projects} onRefresh={loadData}/>}
+            {route.view==='settings' && <SettingsView/>}
           </div>
         </div>
       </main>

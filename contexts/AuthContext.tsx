@@ -20,6 +20,7 @@ interface AuthState {
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
+  updateProfile: (updates: { displayName?: string | null; avatarUrl?: string | null }) => Promise<void>;
   isAdmin: boolean;
   isSuperAdmin: boolean;
   canWrite: boolean;
@@ -81,12 +82,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  async function updateProfile(updates: { displayName?: string | null; avatarUrl?: string | null }) {
+    if (!user) return;
+    const { data, error } = await supabase.rpc('upsert_app_user', {
+      p_email: user.email,
+      p_display_name: updates.displayName !== undefined ? updates.displayName : user.display_name,
+      p_avatar_url: updates.avatarUrl !== undefined ? updates.avatarUrl : user.avatar_url,
+    });
+    if (!error && data) setUser(data as AppUser);
+  }
+
   const role = user?.role ?? 'none';
   const value: AuthState = {
     user,
     loading,
     signInWithGoogle,
     signOut,
+    updateProfile,
     isAdmin:      ['admin', 'superadmin'].includes(role),
     isSuperAdmin: role === 'superadmin',
     canWrite:     ['editor', 'admin', 'superadmin'].includes(role),
